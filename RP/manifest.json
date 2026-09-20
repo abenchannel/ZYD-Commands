@@ -1,0 +1,52 @@
+{
+	"format_version": 2,
+	"metadata": {
+		"authors": [
+			"Zydeco"
+		],
+		"generated_with": {
+			"bridge": [
+				"2.7.54"
+			],
+			"dash": [
+				"0.11.7"
+			]
+		}
+	},
+	"header": {
+		"name": "ZYD COMMANDS V4.1 BETA BP",
+		"description": "FACTION SYSTEM SOON",
+		"min_engine_version": [
+			1,
+			26,
+			4
+		],
+		"uuid": "6cad7293-385e-4889-a5d3-20d54952e000",
+		"version": [
+			4,
+			0,
+			0
+		]
+	},
+	"modules": [
+		{
+			"type": "resources",
+			"uuid": "dfbaa66b-0746-430f-82ea-be9cb6b6e7be",
+			"version": [
+				4,
+				0,
+				0
+			]
+		}
+	],
+	"dependencies": [
+		{
+			"uuid": "8c331fc3-3f01-4883-bbb5-e6461cedf51f",
+			"version": [
+				4,
+				0,
+				0
+			]
+		}
+	]
+}

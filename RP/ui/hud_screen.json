@@ -1,0 +1,71 @@
+{
+  "namespace": "hud",
+  "hud_title_text": {
+    "type": "stack_panel",
+    "orientation": "vertical",
+    "size": [
+      "100%c + 6px",
+      "100%c + 12px"
+    ],
+    "anchor_from": "right_middle",
+    "anchor_to": "right_middle",
+    "offset": [
+      10,
+      0
+    ],
+    "alpha": "@hud.anim_title_text_alpha_out",
+    "controls": [
+      {
+        "sidebar": {
+          "type": "panel",
+          "size": [
+            "100%c + 12px",
+            "100%c + 6px"
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "controls": [
+            {
+              "title_background": {
+                "type": "image",
+                "alpha": 0.6,
+                "size": [
+                  "100%c + 12px",
+                  "100%c + 6px"
+                ],
+                "texture": "textures/ui/hud_tip_text_background",
+                "controls": [
+                  {
+                    "title": {
+                      "type": "label",
+                      "text": "$title_text",
+                      "anchor_from": "center",
+                      "anchor_to": "center",
+                      "color": "$tool_tip_text",
+                      "text_alignment": "left",
+                      "layer": 1,
+                      "localize": false,
+                      "font_size": "small",
+                      "font_scale_factor": 1.65,
+                      "alpha": "@hud.anim_title_text_alpha_out"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "anim_title_text_alpha_out": {
+    "anim_type": "alpha",
+    "easing": "in_expo",
+    "duration": 1,
+    "from": 1.0,
+    "to": 0,
+    "destroy_at_end": "hud_title_text"
+  }
+}
