@@ -73,7 +73,23 @@ function saveClaimMap(map) {
 function getChunkPermsMap() {
     try {
         const raw = world.getDynamicProperty(CHUNK_PERMS_KEY);
-        return raw ? JSON.parse(raw) : {};
+        const map = raw ? JSON.parse(raw) : {};
+        // migrate old entries: ensure public fields exist
+        let migrated = false;
+        for (const key in map) {
+            const entry = map[key];
+            if (!entry) continue;
+            if (entry.canBreakPublic === undefined) { entry.canBreakPublic = false; migrated = true; }
+            if (entry.canPlacePublic === undefined) { entry.canPlacePublic = false; migrated = true; }
+            if (entry.canUseRedstonePublic === undefined) { entry.canUseRedstonePublic = false; migrated = true; }
+            if (entry.canOpenContainersPublic === undefined) { entry.canOpenContainersPublic = false; migrated = true; }
+            if (entry.syncEnabled === undefined) { entry.syncEnabled = true; migrated = true; }
+            if (!Array.isArray(entry.allowedMembers)) { entry.allowedMembers = []; migrated = true; }
+        }
+        if (migrated) {
+            try { world.setDynamicProperty(CHUNK_PERMS_KEY, JSON.stringify(map)); } catch (e) { }
+        }
+        return map;
     } catch (e) { return {}; }
 }
 function saveChunkPermsMap(map) {
@@ -90,29 +106,28 @@ export function getChunkPermAt(chunkKey) {
 function ensureChunkPerm(chunkKey, factionId) {
     const map = getChunkPermsMap();
     if (!map[chunkKey]) {
-        map[chunkKey] = {
-            factionId: factionId,
-            syncEnabled: false, // OFF = custom ACTIVE, ON = fully locked
-            canBreak: false,
-            canPlace: false,
-            canUseRedstone: false,
-            canOpenContainers: false,
-            allowedMembers: []
-        };
+        map[chunkKey] = getDefaultChunkPerm(factionId);
         saveChunkPermsMap(map);
         return map[chunkKey];
     }
     // if existing but faction changed (overclaim), reset
     if (map[chunkKey].factionId !== factionId) {
-        map[chunkKey] = {
-            factionId: factionId,
-            syncEnabled: false,
-            canBreak: false,
-            canPlace: false,
-            canUseRedstone: false,
-            canOpenContainers: false,
-            allowedMembers: []
-        };
+        map[chunkKey] = getDefaultChunkPerm(factionId);
+        saveChunkPermsMap(map);
+        return map[chunkKey];
+    }
+    // migrate old entries: ensure all fields exist
+    let migrated = false;
+    const def = getDefaultChunkPerm(factionId);
+    for (const k in def) {
+        if (map[chunkKey][k] === undefined) {
+            map[chunkKey][k] = def[k];
+            migrated = true;
+        }
+    }
+    if (migrated) {
+        // keep factionId correct
+        map[chunkKey].factionId = factionId;
         saveChunkPermsMap(map);
     }
     return map[chunkKey];
@@ -381,15 +396,7 @@ export function executeClaim(player) {
         if (isOverclaim) {
             // Overclaim: reset perms to new owner defaults
             const map = getChunkPermsMap();
-            map[chunkKey] = {
-                factionId: factionId,
-                syncEnabled: false,
-                canBreak: false,
-                canPlace: false,
-                canUseRedstone: false,
-                canOpenContainers: false,
-                allowedMembers: []
-            };
+            map[chunkKey] = getDefaultChunkPerm(factionId);
             saveChunkPermsMap(map);
         } else {
             ensureChunkPerm(chunkKey, factionId);
@@ -716,11 +723,15 @@ function showClaimSettingsUI(player) {
 function getDefaultChunkPerm(factionId) {
     return {
         factionId: factionId,
-        syncEnabled: false,
+        syncEnabled: true,
         canBreak: false,
         canPlace: false,
         canUseRedstone: false,
         canOpenContainers: false,
+        canBreakPublic: false,
+        canPlacePublic: false,
+        canUseRedstonePublic: false,
+        canOpenContainersPublic: false,
         allowedMembers: []
     };
 }
@@ -750,29 +761,31 @@ function showAreaPermissionsUI(player) {
 
     const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
     const { x, z } = getChunkCoords(player.location);
-    const syncStatus = perms.syncEnabled ? "§cON (Locked)" : "§aOFF (Custom Active)";
+    const syncStatus = perms.syncEnabled ? "§cON (DISABLED)" : "§aOFF (ENABLED)";
     const membersCount = (perms.allowedMembers || []).length;
-    const permSummary = `Break:${perms.canBreak ? "§aON" : "§cOFF"}§f Place:${perms.canPlace ? "§aON" : "§cOFF"}§f Redstone:${perms.canUseRedstone ? "§aON" : "§cOFF"}§f Containers:${perms.canOpenContainers ? "§aON" : "§cOFF"}`;
+    const permSummaryMember = `Break:${perms.canBreak ? "§aON" : "§cOFF"}§f Place:${perms.canPlace ? "§aON" : "§cOFF"}§f Redstone:${perms.canUseRedstone ? "§aON" : "§cOFF"}§f Containers:${perms.canOpenContainers ? "§aON" : "§cOFF"}`;
+    const permSummaryPublic = `Break:${perms.canBreakPublic ? "§aON" : "§cOFF"}§f Place:${perms.canPlacePublic ? "§aON" : "§cOFF"}§f Redstone:${perms.canUseRedstonePublic ? "§aON" : "§cOFF"}§f Containers:${perms.canOpenContainersPublic ? "§aON" : "§cOFF"}`;
 
     let body = "§7---------------------------\n";
     body += `§7Chunk: §f${x}, ${z} §7Dim: §f${player.dimension.id.replace("minecraft:", "")}\n`;
-    body += `§7Sync: ${syncStatus}\n`;
+    body += `§7Sync: ${syncStatus} §8[ON=DISABLED, OFF=ENABLED]\n`;
     body += `§7Members: §f${membersCount}/10\n`;
-    body += `§7Perms: ${permSummary}\n`;
+    body += `§7Member Perms: ${permSummaryMember}\n`;
+    body += `§7Public Perms: ${permSummaryPublic}\n`;
     body += "§7---------------------------\n";
-    body += "§7Sync OFF = custom rules ACTIVE (allowed members get access per toggles).\n";
-    body += "§7Sync ON = fully locked, per-chunk list ignored.\n";
+    body += "§7Sync ON = Area Permissions DISABLED (fully locked).\n";
+    body += "§7Sync OFF = ENABLED (member + public active).\n";
     body += "§7---------------------------";
 
     const form = new ActionFormData()
         .title("§d§lArea Permissions")
         .body(body)
         .button(`§bMembers\n§f[ ${membersCount}/10 ]`, "textures/list.png")
-        .button("§eSettings Permissions\n§f[ Break / Place / Redstone / Containers ]", "textures/settings.png")
+        .button("§eSettings Permissions\n§f[ Member + Public ]", "textures/settings.png")
         .button("§cBack", "textures/back.png");
 
     form.show(player).then(res => {
-        if (res.canceled) { showClaimMenuUI(player); return; }
+        if (res.canceled) return;
         if (res.selection === 0) showAreaPermsMembersUI(player, chunkKey, factionId);
         else if (res.selection === 1) showAreaPermsSettingsUI(player, chunkKey, factionId);
         else showClaimMenuUI(player);
@@ -804,14 +817,14 @@ function showAreaPermsMembersUI(player, chunkKey, factionId) {
         const onlineP = onlinePlayers.find(p => p.id === pid);
         const name = onlineP?.name || mData?.name || "Unknown";
         const role = mData?.role || "member";
-        form.button(`§f${name}\n§7Role: ${role} §f| §cRemove`, "textures/rank_colours/gray.png");
+        form.button(`§f${name}\n§eRole: ${role} §f| §cRemove`, "textures/rank_colours/gray.png");
         memberButtons.push(pid);
     }
 
     form.button("§cBack", "textures/back.png");
 
     form.show(player).then(res => {
-        if (res.canceled) { showAreaPermissionsUI(player); return; }
+        if (res.canceled) return;
         if (res.selection === 0) {
             showAreaPermsAddMemberUI(player, chunkKey, factionId);
         } else if (res.selection >= 1 && res.selection < 1 + memberButtons.length) {
@@ -838,13 +851,22 @@ function showAreaPermsAddMemberUI(player, chunkKey, factionId) {
 
     const eligible = [];
     for (const mid in faction.members) {
-        if (!allowed.includes(mid)) {
-            eligible.push({ id: mid, data: faction.members[mid] });
-        }
+        if (allowed.includes(mid)) continue;
+        const mem = faction.members[mid];
+        if (!mem) continue;
+        // Owner exclusion: Owner role always has all perms
+        if (mem.role === "owner") continue;
+        // Exclude anyone who already has all 4 role perms
+        const hasAll4 = hasFactionPermission(faction, mid, "canBreak") &&
+            hasFactionPermission(faction, mid, "canPlace") &&
+            hasFactionPermission(faction, mid, "canOpenContainers") &&
+            hasFactionPermission(faction, mid, "canUseDoors");
+        if (hasAll4) continue;
+        eligible.push({ id: mid, data: mem });
     }
 
     if (eligible.length === 0) {
-        player.sendMessage("§cNo eligible faction members to add (all already allowed or not in faction).");
+        player.sendMessage("§cNo eligible faction members to add (all already allowed, owner, or have full perms).");
         return showAreaPermsMembersUI(player, chunkKey, factionId);
     }
 
@@ -864,12 +886,12 @@ function showAreaPermsAddMemberUI(player, chunkKey, factionId) {
         const name = onlineP?.name || e.data.name || "Unknown";
         const role = e.data.role || "member";
         const status = onlineP ? "§aOnline" : "§cOffline";
-        form.button(`§f${name}\n§7${role} | ${status}`, "textures/tpa2.png");
+        form.button(`§f${name}\n§e${role} §f| ${status}`, "textures/tpa2.png");
     }
     form.button("§cBack", "textures/back.png");
 
     form.show(player).then(res => {
-        if (res.canceled) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
+        if (res.canceled) return;
         if (res.selection === eligible.length) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
         const chosen = eligible[res.selection];
         if (!chosen) return showAreaPermsAddMemberUI(player, chunkKey, factionId);
@@ -909,7 +931,8 @@ function showAreaPermsRemoveMemberConfirmUI(player, chunkKey, factionId, targetI
         .button2("§aCancel");
 
     form.show(player).then(res => {
-        if (res.canceled || res.selection === 1) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
+        if (res.canceled) return;
+        if (res.selection === 1) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
         const map = getChunkPermsMap();
         if (map[chunkKey] && Array.isArray(map[chunkKey].allowedMembers)) {
             map[chunkKey].allowedMembers = map[chunkKey].allowedMembers.filter(id => id !== targetId);
@@ -923,33 +946,85 @@ function showAreaPermsRemoveMemberConfirmUI(player, chunkKey, factionId, targetI
 
 function showAreaPermsSettingsUI(player, chunkKey, factionId) {
     const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
+    // ensure public fields exist for UI
+    if (perms.canBreakPublic === undefined) perms.canBreakPublic = false;
+    if (perms.canPlacePublic === undefined) perms.canPlacePublic = false;
+    if (perms.canUseRedstonePublic === undefined) perms.canUseRedstonePublic = false;
+    if (perms.canOpenContainersPublic === undefined) perms.canOpenContainersPublic = false;
 
     const form = new ModalFormData()
         .title("§e§lArea Settings")
-        .toggle("§6Sync Mode §8(OFF=Custom Active, ON=Fully Locked)", { defaultValue: !!perms.syncEnabled })
+        .toggle("§6Sync Mode §8[Sync ON = DISABLED, OFF = ENABLED]", { defaultValue: !!perms.syncEnabled })
         .divider()
-        .toggle("Allow Break Blocks", { defaultValue: !!perms.canBreak })
-        .toggle("Allow Place Blocks", { defaultValue: !!perms.canPlace })
-        .toggle("Allow Redstone / Doors", { defaultValue: !!perms.canUseRedstone })
-        .toggle("Allow Containers / Chests", { defaultValue: !!perms.canOpenContainers });
+        .label("§b§lMembers-Only Permissions §8[Requires Sync OFF + Added Member]")
+        .toggle("Allow Break Blocks (Members-Only)", { defaultValue: !!perms.canBreak })
+        .toggle("Allow Place Blocks (Members-Only)", { defaultValue: !!perms.canPlace })
+        .toggle("Allow Redstone / Doors (Members-Only)", { defaultValue: !!perms.canUseRedstone })
+        .toggle("Allow Containers / Chests (Members-Only)", { defaultValue: !!perms.canOpenContainers })
+        .divider()
+        .label("§a§lPublic Permissions §8[All Players, Requires Sync OFF]")
+        .toggle("Allow Break Blocks (Public)", { defaultValue: !!perms.canBreakPublic })
+        .toggle("Allow Place Blocks (Public)", { defaultValue: !!perms.canPlacePublic })
+        .toggle("Allow Redstone / Doors (Public)", { defaultValue: !!perms.canUseRedstonePublic })
+        .toggle("Allow Containers / Chests (Public)", { defaultValue: !!perms.canOpenContainersPublic });
 
     form.show(player).then(res => {
-        if (res.canceled) { showAreaPermissionsUI(player); return; }
+        if (res.canceled) return;
         const vals = res.formValues;
         const map = getChunkPermsMap();
         const current = map[chunkKey] || getDefaultChunkPerm(factionId);
-        current.syncEnabled = !!vals[0];
-        // vals[1] is divider
-        current.canBreak = !!vals[2];
-        current.canPlace = !!vals[3];
-        current.canUseRedstone = !!vals[4];
-        current.canOpenContainers = !!vals[5];
+        // vals: 0 sync, 1-4 member, 5-8 public (labels/dividers have no values)
+        // Fallback if using textField headers (then length would be 11 with headers at 1 and 6)
+        let syncVal, breakM, placeM, redM, contM, breakP, placeP, redP, contP;
+        if (vals.length === 9) {
+            syncVal = vals[0];
+            breakM = vals[1];
+            placeM = vals[2];
+            redM = vals[3];
+            contM = vals[4];
+            breakP = vals[5];
+            placeP = vals[6];
+            redP = vals[7];
+            contP = vals[8];
+        } else if (vals.length >= 11) {
+            // textField version: 0 sync, 1 header, 2-5 member, 6 header, 7-10 public
+            syncVal = vals[0];
+            breakM = vals[2];
+            placeM = vals[3];
+            redM = vals[4];
+            contM = vals[5];
+            breakP = vals[7];
+            placeP = vals[8];
+            redP = vals[9];
+            contP = vals[10];
+        } else {
+            // unexpected, try best effort
+            syncVal = vals[0];
+            breakM = vals[1] ?? false;
+            placeM = vals[2] ?? false;
+            redM = vals[3] ?? false;
+            contM = vals[4] ?? false;
+            breakP = vals[5] ?? false;
+            placeP = vals[6] ?? false;
+            redP = vals[7] ?? false;
+            contP = vals[8] ?? false;
+        }
+
+        current.syncEnabled = !!syncVal;
+        current.canBreak = !!breakM;
+        current.canPlace = !!placeM;
+        current.canUseRedstone = !!redM;
+        current.canOpenContainers = !!contM;
+        current.canBreakPublic = !!breakP;
+        current.canPlacePublic = !!placeP;
+        current.canUseRedstonePublic = !!redP;
+        current.canOpenContainersPublic = !!contP;
         current.factionId = factionId;
         current.allowedMembers = current.allowedMembers || [];
         map[chunkKey] = current;
         saveChunkPermsMap(map);
 
-        const syncTxt = current.syncEnabled ? "§cON (Locked)" : "§aOFF (Custom Active)";
+        const syncTxt = current.syncEnabled ? "§cON (DISABLED)" : "§aOFF (ENABLED)";
         player.sendMessage(`§aArea Permissions updated! Sync: ${syncTxt}`);
         player.playSound("random.orb");
         showAreaPermissionsUI(player);
