@@ -30,6 +30,17 @@ const CLAIM_MAP_KEY = "zyd:claim_map";
 const CLAIM_DIMS_KEY = "zyd:claim_allowed_dims";
 const CLAIM_POWER_RATIO = 2; // 2 power = 1 claim
 const CHUNK_PERMS_KEY = "zyd:chunk_perms";
+const FEATURE_TOGGLES_KEY_CLAIMS = "zyd:feature_toggles";
+function isFactionsEnabledClaims() {
+    try {
+        const raw = world.getDynamicProperty(FEATURE_TOGGLES_KEY_CLAIMS);
+        if (raw) {
+            const toggles = JSON.parse(raw);
+            if (toggles.factions === false) return false;
+        }
+    } catch (e) { }
+    return true;
+}
 
 export function getAllowedClaimDimensions() {
     try {
@@ -166,6 +177,7 @@ function countFactionClaims(claimMap, factionId) {
 }
 
 export function getChunkOwnerAt(location, dimensionId) {
+    if (!isFactionsEnabledClaims()) return null;
     const claimMap = getClaimMap();
     const chunkKey = getChunkKey(location.x, location.z, dimensionId);
     return claimMap[chunkKey] || null;
@@ -176,6 +188,7 @@ export function getChunkOwnerAt(location, dimensionId) {
 // ============================================
 
 export function showClaimMenuUI(player) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factionId = getPlayerFactionId(player.id);
     const currentDim = player.dimension.id;
     const dims = getAllowedClaimDimensions();
@@ -304,6 +317,7 @@ export function showClaimMenuUI(player) {
 // ============================================
 
 export function executeClaim(player) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factionId = getPlayerFactionId(player.id);
     if (!factionId) {
         player.playSound("note.bass");
@@ -451,6 +465,7 @@ export function executeClaim(player) {
 // ============================================
 
 export function executeUnclaim(player) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factionId = getPlayerFactionId(player.id);
     if (!factionId) {
         player.playSound("note.bass");
@@ -523,6 +538,7 @@ function getTerritoryDisplayInfo(ownerId, myFactionId, factions) {
 }
 
 system.runInterval(() => {
+    if (!isFactionsEnabledClaims()) return;
     const claimMap = getClaimMap();
     const factions = getAllFactions();
 
@@ -569,6 +585,7 @@ system.runInterval(() => {
 export const autoMapPlayers = new Set();
 
 export function generateAsciiMap(player) {
+    if (!isFactionsEnabledClaims()) return "§cFactions disabled";
     const claimMap = getClaimMap();
     const factions = getAllFactions();
     const px = Math.floor(player.location.x / 16);
@@ -648,6 +665,7 @@ export function generateAsciiMap(player) {
 export const autoMapLastChunk = new Map();
 
 system.runInterval(() => {
+    if (!isFactionsEnabledClaims()) return;
     if (autoMapPlayers.size === 0) return;
 
     const playersToRemove = [];
@@ -678,6 +696,7 @@ system.runInterval(() => {
 // SECTION 10: CLAIM SETTINGS UI
 // ============================================
 function showClaimSettingsUI(player) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const isAutoMapOn = autoMapPlayers.has(player.id);
 
     const form = new ActionFormData()
@@ -737,6 +756,7 @@ function getDefaultChunkPerm(factionId) {
 }
 
 function showAreaPermissionsUI(player) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factionId = getPlayerFactionId(player.id);
     if (!factionId) {
         player.sendMessage("§cYou are not in a faction.");
@@ -793,6 +813,7 @@ function showAreaPermissionsUI(player) {
 }
 
 function showAreaPermsMembersUI(player, chunkKey, factionId) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factions = getAllFactions();
     const faction = factions[factionId];
     if (!faction) return showClaimMenuUI(player);
@@ -837,6 +858,7 @@ function showAreaPermsMembersUI(player, chunkKey, factionId) {
 }
 
 function showAreaPermsAddMemberUI(player, chunkKey, factionId) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factions = getAllFactions();
     const faction = factions[factionId];
     if (!faction) return showClaimMenuUI(player);
@@ -917,6 +939,7 @@ function showAreaPermsAddMemberUI(player, chunkKey, factionId) {
 }
 
 function showAreaPermsRemoveMemberConfirmUI(player, chunkKey, factionId, targetId) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const factions = getAllFactions();
     const faction = factions[factionId];
     if (!faction) return showClaimMenuUI(player);
@@ -945,6 +968,7 @@ function showAreaPermsRemoveMemberConfirmUI(player, chunkKey, factionId, targetI
 }
 
 function showAreaPermsSettingsUI(player, chunkKey, factionId) {
+    if (!isFactionsEnabledClaims()) { try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) {} return; }
     const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
     // ensure public fields exist for UI
     if (perms.canBreakPublic === undefined) perms.canBreakPublic = false;
@@ -1035,6 +1059,7 @@ function showAreaPermsSettingsUI(player, chunkKey, factionId) {
 // SECTION 11: FACTION UNDER ATTACK ALARM
 // ============================================
 world.afterEvents.entityHurt.subscribe((event) => {
+    if (!isFactionsEnabledClaims()) return;
     const victim = event.hurtEntity;
     const attacker = event.damageSource?.damagingEntity;
 

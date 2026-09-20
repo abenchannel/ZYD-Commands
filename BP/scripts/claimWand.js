@@ -18,12 +18,27 @@ import { world, system, Player } from "@minecraft/server";
 import { showClaimMenuUI } from "./factionsClaims.js";
 
 const CLAIM_WAND_ID = "zyd:claim_wand";
+const FEATURE_TOGGLES_KEY_WAND = "zyd:feature_toggles";
+function isFactionsEnabledWand() {
+    try {
+        const raw = world.getDynamicProperty(FEATURE_TOGGLES_KEY_WAND);
+        if (raw) {
+            const toggles = JSON.parse(raw);
+            if (toggles.factions === false) return false;
+        }
+    } catch (e) { }
+    return true;
+}
 
 /**
  * What the wand does when used. Swap this out if you want a different UI
  * (e.g. a dedicated claim panel instead of the full Factions menu).
  */
 function useClaimWand(player) {
+    if (!isFactionsEnabledWand()) {
+        try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) { }
+        return;
+    }
     player.playSound("random.orb");
     showClaimMenuUI(player);
 }
@@ -32,6 +47,7 @@ function useClaimWand(player) {
 // EVENT: USE ITEM (right-click in air / use)
 // ===========================================================================
 world.beforeEvents.itemUse.subscribe((event) => {
+    if (!isFactionsEnabledWand()) return;
     const player = event.source;
     const item = event.itemStack;
 

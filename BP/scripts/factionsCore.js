@@ -145,6 +145,25 @@ const FACTION_STATUS_BROADCAST_CD_MS = 3600000; // 60 minutes
 const FACTION_STATUS_BROADCAST_CD_PREFIX = "zyd:fstatus_bcast_cd_";
 const FACTION_STATUS_BCAST_COUNT_PREFIX = "zyd:fstatus_bcast_cnt_";
 const PENDING_REQUEST_PREFIX = "zyd:fpending_";
+
+// ============================================
+// FACTIONS TOGGLE CHECK (no circular import)
+// ============================================
+const FEATURE_TOGGLES_KEY_CORE = "zyd:feature_toggles";
+function isFactionsEnabledCore() {
+    try {
+        const raw = world.getDynamicProperty(FEATURE_TOGGLES_KEY_CORE);
+        if (raw) {
+            const toggles = JSON.parse(raw);
+            if (toggles.factions === false) return false;
+        }
+    } catch (e) { }
+    return true;
+}
+
+function isFactionsDisabledMessage(player) {
+    try { player.sendMessage("§cFactions are currently disabled!"); } catch (e) { }
+}
 const PLAYER_SAVED_POWER_PREFIX = "zyd:fplayer_power_";
 const PLAYER_REGISTRY_KEY = "zyd:player_registry";
 
@@ -228,6 +247,7 @@ function setPlayerFaction(playerId, factionId) {
 }
 
 export function getFactionDisplay(playerId) {
+    if (!isFactionsEnabledCore()) return "";
     const faction = getPlayerFaction(playerId);
     if (!faction) return "";
     const iconUnicode = faction.iconUnicode || "";
@@ -424,6 +444,7 @@ function goBackToMenu(player) {
 // ============================================
 
 export function showFactionsMainUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const faction = getPlayerFaction(player.id);
 
     let bodyText = "";
@@ -498,6 +519,7 @@ export function showFactionsMainUI(player) {
 // ============================================
 
 export function showCreateFactionUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const existingFaction = getPlayerFaction(player.id);
     if (existingFaction) {
         player.sendMessage("§cYou are already in a faction: §f" + existingFaction.name);
@@ -603,6 +625,7 @@ export function showCreateFactionUI(player) {
 // ============================================
 
 function showEditFactionUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const faction = getPlayerFaction(player.id);
     if (!faction) return showFactionsMainUI(player);
 
@@ -1583,6 +1606,7 @@ function getMemberListText(faction) {
 }
 
 function showPlayerPendingRequestsUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const now = Date.now();
     let pending = getPlayerPendingRequests(player.id);
 
@@ -1726,6 +1750,7 @@ function showPlayerManageRequestUI(player, req) {
 // ============================================
 
 function showJoinSearchUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const form = new ModalFormData()
         .title("§e§lJoin Faction")
         .dropdown("§6Search By:", ["Faction Name", "Player Name"])
@@ -1768,6 +1793,7 @@ function showJoinSearchUI(player) {
 }
 
 function showFactionInfoUI(player, factionId) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factions = getAllFactions();
     const faction = factions[factionId];
     if (!faction) { player.sendMessage("§cFaction no longer exists."); showFactionsMainUI(player); return; }
@@ -2050,6 +2076,7 @@ function isDiplomacyOpOverride(player) {
 }
 
 function showDiplomacyUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const faction = getDiplomacyFaction(player);
     if (!faction) {
         if (isDiplomacyOpOverride(player)) {
@@ -2130,6 +2157,7 @@ function showOpDiplomacyUI(player, factionId) {
 }
 
 function showDiplomacyAlliesUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const faction = getDiplomacyFaction(player);
     if (!faction) return showDiplomacyUI(player);
 
@@ -2338,6 +2366,7 @@ function showDiplomacyBetrayAllyConfirmUI(player, allyFactionId, allyFactionName
 // ============================================
 
 function showDiplomacyEnemiesUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const faction = getDiplomacyFaction(player);
     if (!faction) return showDiplomacyUI(player);
 
@@ -2565,6 +2594,7 @@ function showDiplomacySendPeaceRequestUI(player, targetFactionId, targetFactionN
 }
 
 function showDiplomacySearchUI(player, mode) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const form = new ActionFormData()
         .title(mode === "ally" ? "§a§lAdd Allies" : "§c§lAdd Enemy")
         .body(mode === "ally" ? "§7Search for a faction to send an ally request:" : "§7Search for a faction to declare as enemy:");
@@ -3317,6 +3347,7 @@ function showDiplomacyManagePeaceRequestUI(player, req) {
 // ============================================
 
 function showLeaderboardSearchUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const form = new ModalFormData()
         .title("§e§lSearch Faction")
         .textField("§6Enter faction name to search:", "Type here...");
@@ -3497,6 +3528,7 @@ function showLeaderboardAddEnemyUI(player, targetFactionId) {
 // ============================================
 
 function showLeaderboardUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factions = getAllFactions();
     const factionList = [];
 
@@ -3584,6 +3616,7 @@ function showLeaderboardUI(player) {
 // ============================================
 
 function showLeaderboardFactionInfoUI(player, factionId, rank) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factions = getAllFactions();
     const faction = factions[factionId];
     if (!faction) {
@@ -3775,6 +3808,7 @@ function showLeaderboardRequestToJoinUI(player, factionId) {
 // ============================================
 
 function showOpEditFactionUI(player, factionId) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     if (!player.hasTag("op")) {
         player.sendMessage("§cOperator access required.");
         showLeaderboardFactionInfoUI(player, factionId);
@@ -4553,6 +4587,7 @@ export { showDisbandConfirmUI };
 // SECTION 27: OFFLINE NOTIFICATIONS
 // ============================================
 export function processOfflineNotifications(player) {
+    if (!isFactionsEnabledCore()) return;
     const factions = getAllFactions();
     const fId = getPlayerFactionId(player.id);
     if (!fId) return;
@@ -4579,6 +4614,7 @@ export function processOfflineNotifications(player) {
 // ============================================
 
 export function showFactionPowerInfo(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factionId = getPlayerFactionId(player.id);
     let myPower = getPlayerSavedPower(player.id);
 
@@ -4596,6 +4632,7 @@ export function showFactionPowerInfo(player) {
 const activeFactionHomeTeleports = new Map();
 
 export function showSetFactionHome(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factionId = getPlayerFactionId(player.id);
     if (!factionId) {
         player.playSound("note.bass");
@@ -4643,6 +4680,7 @@ export function showSetFactionHome(player) {
 }
 
 export function showTeleportFactionHome(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factionId = getPlayerFactionId(player.id);
     if (!factionId) {
         player.playSound("note.bass");
@@ -4722,6 +4760,7 @@ export function showTeleportFactionHome(player) {
 }
 
 export function showDeleteFactionHome(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     const factionId = getPlayerFactionId(player.id);
     if (!factionId) {
         player.playSound("note.bass");
@@ -4792,6 +4831,7 @@ export function saveFactionSettings(settings) {
 }
 
 export function showFactionSettingsUI(player) {
+    if (!isFactionsEnabledCore()) { isFactionsDisabledMessage(player); return; }
     if (!player.hasTag("op") && !player.hasTag("admin")) {
         player.playSound("note.bass");
         return player.sendMessage("§cOperator access required.");
