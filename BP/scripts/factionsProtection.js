@@ -19,6 +19,12 @@
 // - Can Place Blocks
 // - Can Open Containers
 // - Can Use Doors/Redstone
+//
+// Per-Chunk Area Permissions (per claimed chunk):
+// - syncEnabled OFF = custom ACTIVE, ON = fully locked ignoring list/toggles
+// - allowedMembers ≤10 faction member IDs get extra access per 4 toggles
+// - Priority: role perm top (owner always, canBreak etc override), chunk perm extra when Sync OFF
+// - Bucket/water/lava/fire included in canBreak/canPlace for that chunk when Sync OFF
 // ============================================
 
 import { world, system, BlockPermutation } from "@minecraft/server";
@@ -30,6 +36,7 @@ import { getChunkOwnerAt } from "./factionsClaims.js";
 // ============================================
 
 const PROTECTION_SETTINGS_KEY = "zyd:faction_protection_settings";
+const CHUNK_PERMS_KEY = "zyd:chunk_perms";
 
 const DEFAULT_PROTECTION_SETTINGS = {
     allowTntDamage: false,
@@ -147,6 +154,45 @@ export function saveProtectionSettings(settings) {
     }
 }
 
+// Chunk perms helpers
+function getChunkPermsMap() {
+    try {
+        const raw = world.getDynamicProperty(CHUNK_PERMS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+}
+function getChunkKeyFromLocation(x, z, dimId) {
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    return `${dimId}_${cx},${cz}`;
+}
+function getChunkPermForBlock(location, dimId) {
+    try {
+        const map = getChunkPermsMap();
+        const key = getChunkKeyFromLocation(location.x, location.z, dimId);
+        return map[key] || null;
+    } catch (e) { return null; }
+}
+
+// Area perm check: returns true if player has extra access via chunk perms when Sync OFF
+function isAllowedByChunkPerm(playerId, factionId, chunkPerm, permType) {
+    if (!chunkPerm) return false;
+    if (chunkPerm.factionId !== factionId) return false;
+    if (chunkPerm.syncEnabled) return false; // Sync ON = fully locked, ignore list/toggles
+    if (!Array.isArray(chunkPerm.allowedMembers) || !chunkPerm.allowedMembers.includes(playerId)) return false;
+
+    // permType mapping
+    if (permType === "canBreak") return !!chunkPerm.canBreak;
+    if (permType === "canPlace") return !!chunkPerm.canPlace;
+    if (permType === "canUseDoors") return !!chunkPerm.canUseRedstone; // doors/redstone
+    if (permType === "canOpenContainers") return !!chunkPerm.canOpenContainers;
+    if (permType === "bucket") {
+        // bucket/water/lava/fire included in canBreak/canPlace for that chunk when Sync OFF
+        return !!(chunkPerm.canBreak || chunkPerm.canPlace);
+    }
+    return false;
+}
+
 // ============================================
 // SECTION 3: RELATIONSHIP HELPERS
 // ============================================
@@ -189,12 +235,17 @@ safeSub(world.beforeEvents?.playerBreakBlock, (event) => {
 
     if (playerFactionId === chunkOwnerId) {
         const faction = getFactionById(chunkOwnerId);
-        if (faction && !hasFactionPermission(faction, player.id, "canBreak")) {
-            event.cancel = true;
-            system.run(() => {
-                player.sendMessage("§cYou don't have permission to break blocks in your faction.");
-            });
-        }
+        if (!faction) return;
+        // role perm top
+        if (hasFactionPermission(faction, player.id, "canBreak")) return;
+        // chunk perm extra when Sync OFF
+        const chunkPerm = getChunkPermForBlock(block.location, block.dimension.id);
+        if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "canBreak")) return;
+
+        event.cancel = true;
+        system.run(() => {
+            player.sendMessage("§cYou don't have permission to break blocks in your faction. (Role + Area Permissions checked)");
+        });
         return;
     }
 
@@ -223,12 +274,16 @@ safeSub(world.beforeEvents?.playerPlaceBlock, (event) => {
 
     if (playerFactionId === chunkOwnerId) {
         const faction = getFactionById(chunkOwnerId);
-        if (faction && !hasFactionPermission(faction, player.id, "canPlace")) {
-            event.cancel = true;
-            system.run(() => {
-                player.sendMessage("§cYou don't have permission to place blocks in your faction.");
-            });
-        }
+        if (!faction) return;
+        if (hasFactionPermission(faction, player.id, "canPlace")) return;
+        const chunkPerm = getChunkPermForBlock(block.location, block.dimension.id);
+        if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "canPlace")) return;
+        if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "bucket")) return; // bucket included in canPlace
+
+        event.cancel = true;
+        system.run(() => {
+            player.sendMessage("§cYou don't have permission to place blocks in your faction. (Role + Area Permissions checked)");
+        });
         return;
     }
 
@@ -282,15 +337,45 @@ function isBucketOrFireBlocked(player, block, itemStack) {
     // 1. Check target block location
     if (block) {
         const chunkOwnerId = getChunkOwnerAt(block.location, block.dimension.id);
-        if (chunkOwnerId && chunkOwnerId !== playerFacId) {
-            return true;
+        if (chunkOwnerId) {
+            if (chunkOwnerId !== playerFacId) {
+                return true; // stranger/enemy
+            } else {
+                // own faction: check role perm + chunk perm
+                const faction = getFactionById(chunkOwnerId);
+                if (faction) {
+                    if (hasFactionPermission(faction, player.id, "canPlace") || hasFactionPermission(faction, player.id, "canBreak")) {
+                        return false;
+                    }
+                    const chunkPerm = getChunkPermForBlock(block.location, block.dimension.id);
+                    if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "bucket")) {
+                        return false;
+                    }
+                }
+                // own faction but no perm and sync ON or not allowed -> block
+                return true;
+            }
         }
     }
 
     // 2. Check player standing location
     const playerChunkOwnerId = getChunkOwnerAt(player.location, player.dimension.id);
-    if (playerChunkOwnerId && playerChunkOwnerId !== playerFacId) {
-        return true;
+    if (playerChunkOwnerId) {
+        if (playerChunkOwnerId !== playerFacId) {
+            return true;
+        } else {
+            const faction = getFactionById(playerChunkOwnerId);
+            if (faction) {
+                if (hasFactionPermission(faction, player.id, "canPlace") || hasFactionPermission(faction, player.id, "canBreak")) {
+                    return false;
+                }
+                const chunkPerm = getChunkPermForBlock(player.location, player.dimension.id);
+                if (isAllowedByChunkPerm(player.id, playerChunkOwnerId, chunkPerm, "bucket")) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     return false;
@@ -315,11 +400,11 @@ safeSub(world.beforeEvents?.playerInteractWithBlock, (event) => {
 
     const itemStack = event.itemStack || player.getComponent("equippable")?.getEquipment("Mainhand");
 
-    // 1. Check Buckets & Fire in Enemy/Stranger territory
+    // 1. Check Buckets & Fire in Enemy/Stranger territory + own faction chunk perms
     if (isBucketOrFireBlocked(player, block, itemStack)) {
         event.cancel = true;
         system.run(() => {
-            player.sendMessage("§cYou cannot use buckets or fire in another faction's territory.");
+            player.sendMessage("§cYou cannot use buckets or fire in this territory. (Check Role + Area Permissions, Sync mode)");
         });
         return;
     }
@@ -348,21 +433,27 @@ safeSub(world.beforeEvents?.playerInteractWithBlock, (event) => {
         const faction = getFactionById(chunkOwnerId);
         if (!faction) return;
 
-        if (isContainer && !hasFactionPermission(faction, player.id, "canOpenContainers")) {
+        const chunkPerm = getChunkPermForBlock(block.location, block.dimension.id);
+
+        if (isContainer) {
+            if (hasFactionPermission(faction, player.id, "canOpenContainers")) return;
+            if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "canOpenContainers")) return;
             event.cancel = true;
             system.run(() => {
-                player.sendMessage("§cYou don't have permission to open containers in your faction.");
+                player.sendMessage("§cYou don't have permission to open containers in your faction. (Role + Area Permissions checked)");
             });
             return;
         }
-        if ((isDoor || isRedstone) && !hasFactionPermission(faction, player.id, "canUseDoors")) {
+        if (isDoor || isRedstone) {
+            if (hasFactionPermission(faction, player.id, "canUseDoors")) return;
+            if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "canUseDoors")) return;
             event.cancel = true;
             system.run(() => {
-                player.sendMessage("§cYou don't have permission to use doors or redstone in your faction.");
+                player.sendMessage("§cYou don't have permission to use doors or redstone in your faction. (Role + Area Permissions checked)");
             });
             return;
         }
-        return; // Permitted
+        return; // other interactions permitted for own
     }
 
     if (!isContainer && !isDoor && !isRedstone) return;
@@ -400,7 +491,39 @@ safeSub(world.beforeEvents?.itemUseOn, (event) => {
     if (!chunkOwnerId) return;
 
     const playerFactionId = getPlayerFactionId(player.id);
-    if (chunkOwnerId === playerFactionId) return; // Your own faction is safe
+    if (chunkOwnerId === playerFactionId) {
+        // own faction: check if bucket/fire or tools allowed via role or chunk perms
+        const faction = getFactionById(chunkOwnerId);
+        if (!faction) return;
+        if (itemStack) {
+            const itemId = itemStack.typeId;
+            const isBucket = BUCKET_ITEMS.has(itemId);
+            const isFire = FIRE_ITEMS.has(itemId);
+            if (isBucket || isFire) {
+                if (hasFactionPermission(faction, player.id, "canPlace") || hasFactionPermission(faction, player.id, "canBreak")) return;
+                const chunkPerm = getChunkPermForBlock(block.location, block.dimension.id);
+                if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "bucket")) return;
+                event.cancel = true;
+                system.run(() => {
+                    player.sendMessage("§cYou cannot use buckets or fire in your faction without permission. (Role + Area Permissions)");
+                });
+                return;
+            }
+            // tools for own already allowed? We keep allowed, but if they want to restrict via role, we could check canBreak
+            // For simplicity, allow tools for own if they have canBreak role or chunk perm
+            if (itemId.endsWith("_hoe") || itemId.endsWith("_shovel") || itemId.endsWith("_axe")) {
+                if (hasFactionPermission(faction, player.id, "canBreak") || hasFactionPermission(faction, player.id, "canPlace")) return;
+                const chunkPerm = getChunkPermForBlock(block.location, block.dimension.id);
+                if (isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "canBreak") || isAllowedByChunkPerm(player.id, chunkOwnerId, chunkPerm, "canPlace")) return;
+                event.cancel = true;
+                system.run(() => {
+                    player.sendMessage("§cYou don't have permission to alter terrain in this chunk. (Role + Area Permissions)");
+                });
+                return;
+            }
+        }
+        return; // Your own faction is safe otherwise
+    }
 
     // 1. Check Bucket & Fire Overrides First
     if (isBucketOrFireBlocked(player, block, itemStack)) {
@@ -467,32 +590,29 @@ safeSub(world.beforeEvents?.explosion, (event) => {
 
     const globalAllow = (isTnt && allowTnt) || (isCreeper && allowCreeper) || (isWither && allowWither) || (isCrystal && allowCrystal);
 
-    // If the specific explosion type is globally allowed, do nothing (let it explode)
     if (globalAllow) return;
 
     const impactedBlocks = event.getImpactedBlocks();
     const dimensionId = source?.dimension?.id || "minecraft:overworld";
     const safeBlocks = [];
-    const factions = getAllFactions(); // Load once for zero-power checks
+    const factions = getAllFactions();
 
     for (const block of impactedBlocks) {
         const ownerId = getChunkOwnerAt(block.location, dimensionId);
 
         if (!ownerId) {
-            safeBlocks.push(block); // Wilderness — allow destruction
+            safeBlocks.push(block);
         } else if (allowRaidOnZero) {
-            // Check if the faction owning this block is at 0 power
             const ownerFaction = factions[ownerId];
             if (ownerFaction) {
                 const currentPower = calculateFactionPower(ownerFaction);
                 if (currentPower <= 0) {
-                    safeBlocks.push(block); // Power is 0 or less, let it blow up!
+                    safeBlocks.push(block);
                 }
             }
         }
     }
 
-    // If we filtered any out, update the impacted list
     if (safeBlocks.length !== impactedBlocks.length) {
         event.setImpactedBlocks(safeBlocks);
     }
@@ -508,15 +628,12 @@ safeSub(world.beforeEvents?.entityHurt, (event) => {
 
     if (!victim || !damageSource) return;
 
-    // Check Explosion Player Damage
     if (victim.typeId === "minecraft:player") {
         const cause = damageSource.cause;
 
-        // Catch all forms of explosive damage using official Bedrock EntityDamageCause strings
         if (cause === "entityExplosion" || cause === "blockExplosion") {
             const settings = getProtectionSettings();
 
-            // If player explosion damage is disabled (false), cancel damage if victim is inside ANY claim
             if (!settings.allowExplosionPlayerDamage) {
                 const chunkOwnerId = getChunkOwnerAt(victim.location, victim.dimension.id);
                 if (chunkOwnerId) {
@@ -551,7 +668,7 @@ safeSub(world.beforeEvents?.entityHurt, (event) => {
 });
 
 // ============================================
-// SECTION 10: PLAYER INTERACT WITH ENTITY (Item Frames, Armor Stands, Villagers, Leash)
+// SECTION 10: PLAYER INTERACT WITH ENTITY
 // ============================================
 
 safeSub(world.beforeEvents?.playerInteractWithEntity, (event) => {
@@ -597,12 +714,11 @@ safeSub(world.beforeEvents?.playerInteractWithEntity, (event) => {
 });
 
 // ============================================
-// SECTION 11: PROJECTILE PROTECTION (Ender Pearls, Arrows, etc.)
+// SECTION 11: PROJECTILE PROTECTION
 // ============================================
 
 const pearlThrowLocations = new Map();
 
-// 1. Record location when an Ender Pearl is thrown, or block item use inside enemy claims
 safeSub(world.beforeEvents?.itemUse, (event) => {
     const player = event.source;
     const itemStack = event.itemStack;
@@ -611,14 +727,12 @@ safeSub(world.beforeEvents?.itemUse, (event) => {
     const itemId = itemStack.typeId;
 
     if (itemId === "minecraft:ender_pearl") {
-        // Save throw location in case it hits an enemy claim
         pearlThrowLocations.set(player.id, {
             location: { x: player.location.x, y: player.location.y, z: player.location.z },
             dimension: player.dimension
         });
     }
 
-    // Block throwing pearls or shooting bows while standing INSIDE an enemy claim
     const settings = getProtectionSettings();
     if (settings.blockEnemyProjectiles) {
         const chunkOwnerId = getChunkOwnerAt(player.location, player.dimension.id);
@@ -641,7 +755,6 @@ safeSub(world.beforeEvents?.itemUse, (event) => {
     }
 });
 
-// 2. Handle projectile impacts inside claims
 function handleProjectileHit(location, dimension, sourceEntity, projectile) {
     if (!sourceEntity || sourceEntity.typeId !== "minecraft:player") return;
     if (sourceEntity.hasTag("op")) return;
@@ -650,26 +763,24 @@ function handleProjectileHit(location, dimension, sourceEntity, projectile) {
     if (!settings.blockEnemyProjectiles) return;
 
     const chunkOwnerId = getChunkOwnerAt(location, dimension.id);
-    if (!chunkOwnerId) return; // Wilderness = allowed
+    if (!chunkOwnerId) return;
 
     const playerFactionId = getPlayerFactionId(sourceEntity.id);
-    if (playerFactionId === chunkOwnerId) return; // Own faction = allowed
+    if (playerFactionId === chunkOwnerId) return;
 
     const relationship = getRelationship(playerFactionId, chunkOwnerId);
     if (relationship === "ally" && settings.allowAllyInteract) return;
 
-    // Enemy/Stranger claim hit:
     const isEnderPearl = projectile && projectile.typeId === "minecraft:ender_pearl";
 
     try {
         if (projectile && projectile.isValid) {
-            projectile.remove(); // Despawn projectile immediately
+            projectile.remove();
         }
 
         const ownerFac = getFactionById(chunkOwnerId);
         const name = ownerFac ? `${ownerFac.iconUnicode} ${ownerFac.name}` : "another faction";
 
-        // If it's an Ender Pearl, teleport player BACK to their throw origin
         if (isEnderPearl) {
             const throwData = pearlThrowLocations.get(sourceEntity.id);
             system.run(() => {
