@@ -1128,7 +1128,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
         const source = origin.initiator ?? origin.sourceEntity;
         if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
         if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-        if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+        if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
 
         system.run(() => {
             if (getPlayerFactionId(source.id)) {
@@ -1155,7 +1155,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             if (getPlayerFactionId(source.id)) return { status: CustomCommandStatus.Failure, message: "§cYou are already in a faction! Leave your current faction first before creating a new one." };
             system.run(() => showCreateFactionUI(source));
             return { status: CustomCommandStatus.Success };
@@ -1167,7 +1167,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
         const source = origin.initiator ?? origin.sourceEntity;
         if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
         if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-        if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+        if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
         system.run(() => showLeaderboardUI(source));
         return { status: CustomCommandStatus.Success };
     };
@@ -1187,7 +1187,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             if (getPlayerFactionId(source.id)) return { status: CustomCommandStatus.Failure, message: "§cYou are already in a faction! Leave your current faction first before joining another one." };
             system.run(() => showJoinSearchUI(source));
             return { status: CustomCommandStatus.Success };
@@ -1201,7 +1201,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             if (!getPlayerFactionId(source.id)) return { status: CustomCommandStatus.Failure, message: "§cYou must be in a faction to use this command!" };
             system.run(() => showDiplomacyAlliesUI(source));
             return { status: CustomCommandStatus.Success };
@@ -1215,7 +1215,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             if (!getPlayerFactionId(source.id)) return { status: CustomCommandStatus.Failure, message: "§cYou must be in a faction to use this command!" };
             system.run(() => showDiplomacyEnemiesUI(source));
             return { status: CustomCommandStatus.Success };
@@ -1229,7 +1229,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             if (getPlayerFactionId(source.id)) return { status: CustomCommandStatus.Failure, message: "§cYou are already in a faction! Leave first before accepting an invitation." };
 
             system.run(() => {
@@ -1279,7 +1279,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
 
             system.run(() => {
                 const pending = getPlayerPendingRequests(source.id);
@@ -1319,7 +1319,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
 
             system.run(() => {
                 if (autoMapPlayers.has(source.id)) {
@@ -1343,7 +1343,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
 
             system.run(() => {
                 if (autoMapPlayers.has(source.id)) {
@@ -1365,7 +1365,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
 
             system.run(() => {
                 if (!autoMapPlayers.has(source.id)) {
@@ -1387,7 +1387,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
 
             const factionId = getPlayerFactionId(source.id);
             if (!factionId) return { status: CustomCommandStatus.Failure, message: "§cYou are not in a faction!" };
@@ -1409,7 +1409,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             const fid = getPlayerFactionId(source.id);
             if (fid) {
                 const fac = getFactionById(fid);
@@ -1429,7 +1429,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             const fid = getPlayerFactionId(source.id);
             if (fid) {
                 const fac = getFactionById(fid);
@@ -1449,17 +1449,18 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             system.run(() => showFactionPowerInfo(source));
             return { status: CustomCommandStatus.Success };
         }
     );
 
-    // /zyd:factionsettings or /zyd:fsettings — Global Factions settings UI (OP/Admin only)
+    // /zyd:factionsettings or /zyd:fsettings — Global Factions settings UI (OP/Admin only) — also disabled when factions OFF
     const fSettingsHandler = (origin) => {
         const source = origin.initiator ?? origin.sourceEntity;
         if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
         if (!hasTag(source, "op") && !hasTag(source, "admin")) return { status: CustomCommandStatus.Failure, message: "§cYou don't have permission to use this command." };
+        if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
         system.run(() => showFactionSettingsUI(source));
         return { status: CustomCommandStatus.Success };
     };
@@ -1481,7 +1482,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             const fid = getPlayerFactionId(source.id);
             if (fid) {
                 const fac = getFactionById(fid);
@@ -1504,7 +1505,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             system.run(() => showTeleportFactionHome(source));
             return { status: CustomCommandStatus.Success };
         }
@@ -1517,7 +1518,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             const source = origin.initiator ?? origin.sourceEntity;
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
-            if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            if (!isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
             const fid = getPlayerFactionId(source.id);
             if (fid) {
                 const fac = getFactionById(fid);

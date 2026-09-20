@@ -22,6 +22,18 @@ import {
     getFactionDisplay
 } from "./factionsCore.js";
 
+const FEATURE_TOGGLES_KEY_POWER = "zyd:feature_toggles";
+function isFactionsEnabledPower() {
+    try {
+        const raw = world.getDynamicProperty(FEATURE_TOGGLES_KEY_POWER);
+        if (raw) {
+            const toggles = JSON.parse(raw);
+            if (toggles.factions === false) return false;
+        }
+    } catch (e) { }
+    return true;
+}
+
 // ============================================
 // SECTION 1: POWER REGEN LOOP (OPTIMIZED)
 // +1 power every 10 minutes per member
@@ -35,6 +47,7 @@ import {
 // ============================================
 
 system.runInterval(() => {
+    if (!isFactionsEnabledPower()) return;
     const now = Date.now();
     const allPlayers = world.getAllPlayers();
 
@@ -131,6 +144,7 @@ function isTeammateKill(killer, deadFactionId) {
 }
 
 world.afterEvents.entityDie.subscribe((event) => {
+    if (!isFactionsEnabledPower()) return;
     const deadEntity = event.deadEntity;
     if (deadEntity.typeId !== "minecraft:player") return;
 
@@ -199,6 +213,7 @@ world.afterEvents.entityDie.subscribe((event) => {
 // SECTION 3: FRIENDLY FIRE & ALLY PROTECTION
 // ============================================
 world.beforeEvents.entityHurt.subscribe((event) => {
+    if (!isFactionsEnabledPower()) return;
     const victim = event.hurtEntity;
     const attacker = event.damageSource?.damagingEntity;
 

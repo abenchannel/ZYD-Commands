@@ -38,6 +38,17 @@ import { getChunkOwnerAt } from "./factionsClaims.js";
 
 const PROTECTION_SETTINGS_KEY = "zyd:faction_protection_settings";
 const CHUNK_PERMS_KEY = "zyd:chunk_perms";
+const FEATURE_TOGGLES_KEY_PROT = "zyd:feature_toggles";
+function isFactionsEnabledProtection() {
+    try {
+        const raw = world.getDynamicProperty(FEATURE_TOGGLES_KEY_PROT);
+        if (raw) {
+            const toggles = JSON.parse(raw);
+            if (toggles.factions === false) return false;
+        }
+    } catch (e) { }
+    return true;
+}
 
 const DEFAULT_PROTECTION_SETTINGS = {
     allowTntDamage: false,
@@ -182,6 +193,7 @@ function getChunkKeyFromLocation(x, z, dimId) {
     return `${dimId}_${cx},${cz}`;
 }
 function getChunkPermForBlock(location, dimId) {
+    if (!isFactionsEnabledProtection()) return null;
     try {
         const map = getChunkPermsMap();
         const key = getChunkKeyFromLocation(location.x, location.z, dimId);
@@ -255,6 +267,7 @@ const safeSub = (signal, cb) => {
 };
 
 safeSub(world.beforeEvents?.playerBreakBlock, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.player;
     const block = event.block;
 
@@ -299,6 +312,7 @@ safeSub(world.beforeEvents?.playerBreakBlock, (event) => {
 // ============================================
 
 safeSub(world.beforeEvents?.playerPlaceBlock, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.player;
     const block = event.block;
 
@@ -362,6 +376,7 @@ safeSub(world.beforeEvents?.playerPlaceBlock, (event) => {
 // ============================================
 
 function isBucketOrFireBlocked(player, block, itemStack) {
+    if (!isFactionsEnabledProtection()) return false;
     if (!player || player.hasTag("op")) return false;
     if (!itemStack) return false;
 
@@ -431,6 +446,7 @@ function isBucketOrFireBlocked(player, block, itemStack) {
 // ============================================
 
 safeSub(world.beforeEvents?.playerInteractWithBlock, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.player;
     const block = event.block;
 
@@ -541,6 +557,7 @@ safeSub(world.beforeEvents?.playerInteractWithBlock, (event) => {
 // ============================================
 
 safeSub(world.beforeEvents?.itemUseOn, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.source;
     const block = event.block;
     const itemStack = event.itemStack;
@@ -612,6 +629,7 @@ safeSub(world.beforeEvents?.itemUseOn, (event) => {
 });
 
 safeSub(world.beforeEvents?.itemUse, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.source;
     const itemStack = event.itemStack;
 
@@ -628,6 +646,7 @@ safeSub(world.beforeEvents?.itemUse, (event) => {
 // ============================================
 
 safeSub(world.beforeEvents?.explosion, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const source = event.source;
     const settings = getProtectionSettings();
 
@@ -685,6 +704,7 @@ safeSub(world.beforeEvents?.explosion, (event) => {
 // ============================================
 
 safeSub(world.beforeEvents?.entityHurt, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const victim = event.hurtEntity;
     const damageSource = event.damageSource;
 
@@ -734,6 +754,7 @@ safeSub(world.beforeEvents?.entityHurt, (event) => {
 // ============================================
 
 safeSub(world.beforeEvents?.playerInteractWithEntity, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.player;
     const target = event.target;
 
@@ -782,6 +803,7 @@ safeSub(world.beforeEvents?.playerInteractWithEntity, (event) => {
 const pearlThrowLocations = new Map();
 
 safeSub(world.beforeEvents?.itemUse, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     const player = event.source;
     const itemStack = event.itemStack;
     if (!player || player.typeId !== "minecraft:player" || player.hasTag("op") || !itemStack) return;
@@ -818,6 +840,7 @@ safeSub(world.beforeEvents?.itemUse, (event) => {
 });
 
 function handleProjectileHit(location, dimension, sourceEntity, projectile) {
+    if (!isFactionsEnabledProtection()) return;
     if (!sourceEntity || sourceEntity.typeId !== "minecraft:player") return;
     if (sourceEntity.hasTag("op")) return;
 
@@ -862,10 +885,12 @@ function handleProjectileHit(location, dimension, sourceEntity, projectile) {
 }
 
 safeSub(world.afterEvents?.projectileHitBlock, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     handleProjectileHit(event.location, event.dimension, event.source, event.projectile);
 });
 
 safeSub(world.afterEvents?.projectileHitEntity, (event) => {
+    if (!isFactionsEnabledProtection()) return;
     handleProjectileHit(event.location, event.dimension, event.source, event.projectile);
 });
 
