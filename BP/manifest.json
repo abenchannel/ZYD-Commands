@@ -1,0 +1,63 @@
+{
+	"format_version": 2,
+	"metadata": {
+		"authors": [
+			"Zydeco"
+		],
+		"generated_with": {
+			"bridge": [
+				"2.7.54"
+			],
+			"dash": [
+				"0.11.7"
+			]
+		}
+	},
+	"header": {
+		"name": "ZYD COMMANDS V4.1 BETA BP",
+		"description": "ZYD COMMANDS V4 BP",
+		"min_engine_version": [
+			1,
+			26,
+			4
+		],
+		"uuid": "c1a5a103-2d37-4663-8db4-ca4e8ac1e6db",
+		"version": [
+			4,
+			0,
+			0
+		]
+	},
+	"modules": [
+		{
+			"type": "data",
+			"uuid": "56c7df4a-11e9-44d2-9964-c32bd0a4eb7e",
+			"version": [
+				4,
+				0,
+				0
+			]
+		},
+		{
+			"type": "script",
+			"language": "javascript",
+			"uuid": "994e4a9b-33ac-42fd-9dac-8ae2cc303fde",
+			"entry": "scripts/main.js",
+			"version": [
+				4,
+				0,
+				0
+			]
+		}
+	],
+	"dependencies": [
+		{
+			"module_name": "@minecraft/server",
+			"version": "2.11.0-beta"
+		},
+		{
+			"module_name": "@minecraft/server-ui",
+			"version": "2.1.0"
+		}
+	]
+}
