@@ -50,7 +50,8 @@ import {
     showSetFactionHome,
     showTeleportFactionHome,
     showDeleteFactionHome,
-    showFactionSettingsUI
+    showFactionSettingsUI,
+    hasFactionPermission
 } from "./factionsCore.js";
 import { autoMapPlayers, autoMapLastChunk, generateAsciiMap, executeClaim, executeUnclaim } from "./factionsClaims.js";
 
@@ -1401,7 +1402,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
         }
     );
 
-    // /zyd:fclaim — Claim the chunk you are standing on
+    // /zyd:fclaim — Claim the chunk you are standing on (requires Can Claim)
     customCommandRegistry.registerCommand(
         { name: "zyd:fclaim", description: "Claim the current chunk", permissionLevel: CommandPermissionLevel.Any, cheatsRequired: false },
         (origin) => {
@@ -1409,12 +1410,19 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
             if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            const fid = getPlayerFactionId(source.id);
+            if (fid) {
+                const fac = getFactionById(fid);
+                if (fac && !hasFactionPermission(fac, source.id, "canClaim")) {
+                    return { status: CustomCommandStatus.Failure, message: "§cYou do not have permission to claim land! (Requires Can Claim)" };
+                }
+            }
             system.run(() => executeClaim(source));
             return { status: CustomCommandStatus.Success };
         }
     );
 
-    // /zyd:funclaim — Unclaim the chunk you are standing on
+    // /zyd:funclaim — Unclaim the chunk you are standing on (requires Can Claim)
     customCommandRegistry.registerCommand(
         { name: "zyd:funclaim", description: "Unclaim the current chunk", permissionLevel: CommandPermissionLevel.Any, cheatsRequired: false },
         (origin) => {
@@ -1422,6 +1430,13 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
             if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            const fid = getPlayerFactionId(source.id);
+            if (fid) {
+                const fac = getFactionById(fid);
+                if (fac && !hasFactionPermission(fac, source.id, "canClaim")) {
+                    return { status: CustomCommandStatus.Failure, message: "§cYou do not have permission to unclaim land! (Requires Can Claim)" };
+                }
+            }
             system.run(() => executeUnclaim(source));
             return { status: CustomCommandStatus.Success };
         }
@@ -1459,7 +1474,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
         fSettingsHandler
     );
 
-    // /zyd:fsethome — set/relocate faction home (owner only, own claim only)
+    // /zyd:fsethome — set/relocate faction home (requires Can SetHome)
     customCommandRegistry.registerCommand(
         { name: "zyd:fsethome", description: "Set your Faction Home", permissionLevel: CommandPermissionLevel.Any, cheatsRequired: false },
         (origin) => {
@@ -1467,6 +1482,16 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
             if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            const fid = getPlayerFactionId(source.id);
+            if (fid) {
+                const fac = getFactionById(fid);
+                if (fac) {
+                    const hasPerm = hasFactionPermission(fac, source.id, "canSetHome") || hasFactionPermission(fac, source.id, "manageHome");
+                    if (!hasPerm) {
+                        return { status: CustomCommandStatus.Failure, message: "§cYou do not have permission to set faction home! (Requires Can SetHome)" };
+                    }
+                }
+            }
             system.run(() => showSetFactionHome(source));
             return { status: CustomCommandStatus.Success };
         }
@@ -1485,7 +1510,7 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
         }
     );
 
-    // /zyd:fdelhome — delete faction home (owner only)
+    // /zyd:fdelhome — delete faction home (requires Can SetHome)
     customCommandRegistry.registerCommand(
         { name: "zyd:fdelhome", description: "Delete Faction Home", permissionLevel: CommandPermissionLevel.Any, cheatsRequired: false },
         (origin) => {
@@ -1493,6 +1518,16 @@ system.beforeEvents.startup.subscribe(({ customCommandRegistry }) => {
             if (!(source instanceof Player)) return { status: CustomCommandStatus.Failure, message: "Players only." };
             if (isBanned(source)) return { status: CustomCommandStatus.Failure, message: "§cYou are banned from using commands." };
             if (!hasTag(source, "op") && !isFeatureEnabled("factions")) return { status: CustomCommandStatus.Failure, message: "§cThis feature is currently disabled!" };
+            const fid = getPlayerFactionId(source.id);
+            if (fid) {
+                const fac = getFactionById(fid);
+                if (fac) {
+                    const hasPerm = hasFactionPermission(fac, source.id, "canSetHome") || hasFactionPermission(fac, source.id, "manageHome");
+                    if (!hasPerm) {
+                        return { status: CustomCommandStatus.Failure, message: "§cYou do not have permission to delete faction home! (Requires Can SetHome)" };
+                    }
+                }
+            }
             system.run(() => showDeleteFactionHome(source));
             return { status: CustomCommandStatus.Success };
         }

@@ -8,16 +8,18 @@
 // - Dimension restrictions (Overworld default)
 // - ASCII Map generator with dynamic centering
 // - Live Auto-Map background tracker
+// - Area Permissions (per-chunk access & rules)
 // ============================================
 
 import { world, system } from "@minecraft/server";
-import { ActionFormData, MessageFormData } from "@minecraft/server-ui";
+import { ActionFormData, MessageFormData, ModalFormData } from "@minecraft/server-ui";
 import {
     getAllFactions,
     getPlayerFactionId,
     saveAllFactions,
     calculateFactionPower,
-    MAX_POWER_PER_MEMBER
+    MAX_POWER_PER_MEMBER,
+    hasFactionPermission
 } from "./factionsCore.js";
 
 // ============================================
@@ -27,6 +29,7 @@ import {
 const CLAIM_MAP_KEY = "zyd:claim_map";
 const CLAIM_DIMS_KEY = "zyd:claim_allowed_dims";
 const CLAIM_POWER_RATIO = 2; // 2 power = 1 claim
+const CHUNK_PERMS_KEY = "zyd:chunk_perms";
 
 export function getAllowedClaimDimensions() {
     try {
@@ -63,6 +66,62 @@ function saveClaimMap(map) {
         world.setDynamicProperty(CLAIM_MAP_KEY, JSON.stringify(map));
     } catch (e) {
         console.warn("[FactionsClaims] Failed to save claim map:", e);
+    }
+}
+
+// Chunk perms helpers (shared key with factionsCore direct helpers)
+function getChunkPermsMap() {
+    try {
+        const raw = world.getDynamicProperty(CHUNK_PERMS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+}
+function saveChunkPermsMap(map) {
+    try {
+        world.setDynamicProperty(CHUNK_PERMS_KEY, JSON.stringify(map));
+    } catch (e) { }
+}
+export function getChunkPermAt(chunkKey) {
+    try {
+        const map = getChunkPermsMap();
+        return map[chunkKey] || null;
+    } catch (e) { return null; }
+}
+function ensureChunkPerm(chunkKey, factionId) {
+    const map = getChunkPermsMap();
+    if (!map[chunkKey]) {
+        map[chunkKey] = {
+            factionId: factionId,
+            syncEnabled: false, // OFF = custom ACTIVE, ON = fully locked
+            canBreak: false,
+            canPlace: false,
+            canUseRedstone: false,
+            canOpenContainers: false,
+            allowedMembers: []
+        };
+        saveChunkPermsMap(map);
+        return map[chunkKey];
+    }
+    // if existing but faction changed (overclaim), reset
+    if (map[chunkKey].factionId !== factionId) {
+        map[chunkKey] = {
+            factionId: factionId,
+            syncEnabled: false,
+            canBreak: false,
+            canPlace: false,
+            canUseRedstone: false,
+            canOpenContainers: false,
+            allowedMembers: []
+        };
+        saveChunkPermsMap(map);
+    }
+    return map[chunkKey];
+}
+function deleteChunkPermAt(chunkKey) {
+    const map = getChunkPermsMap();
+    if (map[chunkKey]) {
+        delete map[chunkKey];
+        saveChunkPermsMap(map);
     }
 }
 
@@ -116,10 +175,21 @@ export function showClaimMenuUI(player) {
     const factions = getAllFactions();
 
     let isEnemy = false;
+    let isAlly = false;
     if (factionId && currentOwner && currentOwner !== factionId) {
         const myFac = factions[factionId];
-        if (myFac && myFac.enemies && myFac.enemies.some(e => e.factionId === currentOwner)) {
-            isEnemy = true;
+        if (myFac) {
+            if (myFac.enemies && myFac.enemies.some(e => e.factionId === currentOwner)) isEnemy = true;
+            if (myFac.allies && myFac.allies.includes(currentOwner)) isAlly = true;
+        }
+    }
+
+    // Permission check for canClaim
+    let hasCanClaim = false;
+    if (factionId) {
+        const myFac = factions[factionId];
+        if (myFac) {
+            hasCanClaim = hasFactionPermission(myFac, player.id, "canClaim");
         }
     }
 
@@ -127,13 +197,17 @@ export function showClaimMenuUI(player) {
     let targetPowerText = "";
     if (currentOwner) {
         const ownerFaction = factions[currentOwner];
-        const ownerName = ownerFaction ? `${ownerFaction.iconUnicode} ${ownerFaction.name}` : "§8Unknown";
+        const ownerName = ownerFaction ? `${ownerFaction.iconUnicode} ${ownerFaction.name}`.replace(/§r/g, "") : "§8Unknown";
+        const ownerPlainName = ownerFaction ? ownerFaction.name.replace(/§./g, "").trim() : "Unknown";
 
         if (currentOwner === factionId) {
-            statusText = `§7Status: §aClaimed §7(Your Faction)\n§7Owner: ${ownerName}`;
+            statusText = `§7Status: §aClaimed §7(Your Faction: ${ownerName}§7)`;
         } else {
-            const relationStr = isEnemy ? "§6Enemy Faction" : "§cOther Faction";
-            statusText = `§7Status: §cClaimed §7(${relationStr}§7)\n§7Owner: ${ownerName}`;
+            let relationLabel = "Other Faction";
+            if (isEnemy) relationLabel = "Enemy Faction";
+            else if (isAlly) relationLabel = "Ally Faction";
+            // Requirement: "Claimed (Other Faction: Name)"
+            statusText = `§7Status: §cClaimed §7(${relationLabel}: ${ownerName}§7)`;
 
             if (ownerFaction) {
                 targetPowerText = `§7Target Power: §b${calculateFactionPower(ownerFaction)}\n`;
@@ -172,7 +246,7 @@ export function showClaimMenuUI(player) {
 
     const buttons = [];
 
-    if (factionId && isDimAllowed) {
+    if (factionId && isDimAllowed && hasCanClaim) {
         if (!currentOwner) {
             buttons.push("claim");
             form.button("§aClaim Land\n§f[ Expand your territory ]", "textures/tpa2.png");
@@ -182,9 +256,15 @@ export function showClaimMenuUI(player) {
         }
     }
 
-    if (factionId && currentOwner === factionId) {
+    if (factionId && currentOwner === factionId && hasCanClaim) {
         buttons.push("unclaim");
         form.button("§eUnclaim Land\n§f[ Release this territory ]", "textures/rank_colours/red.png");
+    }
+
+    // Area Permissions button above Claim Settings, only when standing on own claim and has canClaim
+    if (factionId && currentOwner === factionId && hasCanClaim) {
+        buttons.push("area_perms");
+        form.button("§dArea Permissions\n§f[ Chunk access & rules ]", "textures/random/roles.png");
     }
 
     buttons.push("settings");
@@ -199,6 +279,7 @@ export function showClaimMenuUI(player) {
 
         if (action === "claim") executeClaim(player);
         else if (action === "unclaim") executeUnclaim(player);
+        else if (action === "area_perms") showAreaPermissionsUI(player);
         else if (action === "settings") showClaimSettingsUI(player);
     });
 }
@@ -228,12 +309,18 @@ export function executeClaim(player) {
 
     const claimMap = getClaimMap();
     const chunkKey = getChunkKey(player.location.x, player.location.z, currentDim);
+    const { x, z } = getChunkCoords(player.location);
 
     const factions = getAllFactions();
     const myFaction = factions[factionId];
     if (!myFaction) {
         player.playSound("note.bass");
         return player.sendMessage("§cFaction data not found.");
+    }
+
+    if (!hasFactionPermission(myFaction, player.id, "canClaim")) {
+        player.playSound("note.bass");
+        return player.sendMessage("§cYou do not have permission to claim land! (Requires Can Claim)");
     }
 
     const myPower = calculateFactionPower(myFaction);
@@ -288,6 +375,26 @@ export function executeClaim(player) {
     // SUCCESS
     claimMap[chunkKey] = factionId;
     saveClaimMap(claimMap);
+
+    // Chunk perms handling
+    try {
+        if (isOverclaim) {
+            // Overclaim: reset perms to new owner defaults
+            const map = getChunkPermsMap();
+            map[chunkKey] = {
+                factionId: factionId,
+                syncEnabled: false,
+                canBreak: false,
+                canPlace: false,
+                canUseRedstone: false,
+                canOpenContainers: false,
+                allowedMembers: []
+            };
+            saveChunkPermsMap(map);
+        } else {
+            ensureChunkPerm(chunkKey, factionId);
+        }
+    } catch (e) { }
 
     myFaction.currentClaims = currentClaims + 1;
     if (myFaction.currentClaims > (myFaction.maxClaimsReached || 0)) {
@@ -356,15 +463,21 @@ export function executeUnclaim(player) {
         return player.sendMessage("§cYou cannot unclaim this area. It does not belong to your faction.");
     }
 
+    const factions = getAllFactions();
+    const faction = factions[factionId];
+    if (faction && !hasFactionPermission(faction, player.id, "canClaim")) {
+        player.playSound("note.bass");
+        return player.sendMessage("§cYou do not have permission to unclaim land! (Requires Can Claim)");
+    }
+
     // SUCCESS: Unclaim the chunk
     delete claimMap[chunkKey];
     saveClaimMap(claimMap);
+    try { deleteChunkPermAt(chunkKey); } catch (e) { }
 
     const { x, z } = getChunkCoords(player.location);
 
     // Update faction counter & check if Faction Home was in this chunk
-    const factions = getAllFactions();
-    const faction = factions[factionId];
     if (faction) {
         faction.currentClaims = Math.max(0, (faction.currentClaims || 1) - 1);
 
@@ -450,6 +563,7 @@ export const autoMapPlayers = new Set();
 
 export function generateAsciiMap(player) {
     const claimMap = getClaimMap();
+    const factions = getAllFactions();
     const px = Math.floor(player.location.x / 16);
     const pz = Math.floor(player.location.z / 16);
     const dim = player.dimension.id;
@@ -462,11 +576,8 @@ export function generateAsciiMap(player) {
     const halfH = EXPAND_NORTH_SOUTH;
 
     // --- DYNAMIC ALIGNMENT CALCULATIONS ---
-    // Width = "W  " (3) + [Cells * 2] + "  E" (3)
     const rowWidth = 6 + ((2 * halfW + 1) * 2);
-    // Dynamic border (shorter by 5 based on user request)
     const border = "§8" + "-".repeat(Math.max(1, rowWidth - 5));
-    // Dynamic padding to center N and S directly over the "+" (shifted right by 3)
     const padding = " ".repeat(3 + (halfW * 2) + 3);
 
     let playerSymbolColor = "§e"; // Default yellow
@@ -476,16 +587,32 @@ export function generateAsciiMap(player) {
         playerSymbolColor = "§c"; // Red if someone else's
     }
 
+    const myFaction = playerFactionId ? factions[playerFactionId] : null;
+
     const mapRows = [];
     for (let z = -halfH; z <= halfH; z++) {
         let row = "";
         for (let x = -halfW; x <= halfW; x++) {
             if (x === 0 && z === 0) {
-                row += `${playerSymbolColor}+ `; // Player
-            } else if (claimMap[`${dim}_${px + x},${pz + z}`]) {
-                row += "§b# "; // Claimed
+                row += `${playerSymbolColor}+ `;
             } else {
-                row += "§7= "; // Wilderness
+                const key = `${dim}_${px + x},${pz + z}`;
+                const ownerId = claimMap[key];
+                if (!ownerId) {
+                    row += "§7= "; // Wilderness gray
+                } else if (ownerId === playerFactionId) {
+                    row += "§a# "; // Own green
+                } else if (myFaction) {
+                    if ((myFaction.allies || []).includes(ownerId)) {
+                        row += "§d# "; // Ally pink
+                    } else if ((myFaction.enemies || []).some(e => e.factionId === ownerId)) {
+                        row += "§c# "; // Enemy light red
+                    } else {
+                        row += "§b# "; // Other cyan
+                    }
+                } else {
+                    row += "§b# "; // Other cyan when factionless
+                }
             }
         }
         mapRows.push(row);
@@ -495,7 +622,6 @@ export function generateAsciiMap(player) {
     mapStr += padding + "§fN§r\n";
     mapStr += border + "\n";
 
-    // Map rows wrapped with W and E
     for (const row of mapRows) {
         mapStr += "§fW  " + row + "  E\n";
     }
@@ -503,8 +629,8 @@ export function generateAsciiMap(player) {
     mapStr += border + "\n";
     mapStr += padding + "§fS§r\n";
 
-    // Legend Line
-    mapStr += `${playerSymbolColor}You: +§r §f|§r §bClaimed: §b# §f|§r §7Wilderness: =`;
+    // Updated legend with new colors
+    mapStr += `${playerSymbolColor}You: +§r §f|§r §aOwn: # §f|§r §bOther: # §f|§r §cEnemy: # §f|§r §dAlly: # §f|§r §7Wild: =`;
 
     return mapStr;
 }
@@ -512,7 +638,6 @@ export function generateAsciiMap(player) {
 // ============================================
 // SECTION 9: AUTO-MAP BACKGROUND LOOP
 // ============================================
-// Uses its OWN chunk tracker so it doesn't conflict with the Action Bar system.
 export const autoMapLastChunk = new Map();
 
 system.runInterval(() => {
@@ -531,9 +656,7 @@ system.runInterval(() => {
         const lastChunkKey = autoMapLastChunk.get(player.id);
 
         if (currentChunkKey !== lastChunkKey) {
-            // Update this isolated tracker
             autoMapLastChunk.set(player.id, currentChunkKey);
-            // They moved to a new chunk! Send the updated map.
             player.sendMessage(generateAsciiMap(player));
         }
     }
@@ -542,7 +665,7 @@ system.runInterval(() => {
         autoMapPlayers.delete(id);
         autoMapLastChunk.delete(id);
     }
-}, 20); // Check every 1 second (very lightweight)
+}, 20);
 
 // ============================================
 // SECTION 10: CLAIM SETTINGS UI
@@ -567,7 +690,6 @@ function showClaimSettingsUI(player) {
         if (response.canceled) return;
 
         if (response.selection === 0) {
-            // Toggle Auto Map
             if (autoMapPlayers.has(player.id)) {
                 autoMapPlayers.delete(player.id);
                 autoMapLastChunk.delete(player.id);
@@ -575,17 +697,262 @@ function showClaimSettingsUI(player) {
             } else {
                 autoMapPlayers.add(player.id);
                 player.sendMessage("§7Live map tracker §aENABLED§7. Moving around will update your map.");
-                // Print the map immediately so they see it right away
                 player.sendMessage(generateAsciiMap(player));
             }
             showClaimSettingsUI(player);
         } else if (response.selection === 1) {
-            // View Full Map Once
             player.sendMessage(generateAsciiMap(player));
             showClaimSettingsUI(player);
         } else {
             showClaimMenuUI(player);
         }
+    });
+}
+
+// ============================================
+// SECTION 10b: AREA PERMISSIONS SYSTEM
+// ============================================
+
+function getDefaultChunkPerm(factionId) {
+    return {
+        factionId: factionId,
+        syncEnabled: false,
+        canBreak: false,
+        canPlace: false,
+        canUseRedstone: false,
+        canOpenContainers: false,
+        allowedMembers: []
+    };
+}
+
+function showAreaPermissionsUI(player) {
+    const factionId = getPlayerFactionId(player.id);
+    if (!factionId) {
+        player.sendMessage("§cYou are not in a faction.");
+        return showClaimMenuUI(player);
+    }
+    const factions = getAllFactions();
+    const faction = factions[factionId];
+    if (!faction) return showClaimMenuUI(player);
+
+    if (!hasFactionPermission(faction, player.id, "canClaim")) {
+        player.sendMessage("§cYou do not have permission to manage Area Permissions! (Requires Can Claim)");
+        return showClaimMenuUI(player);
+    }
+
+    const chunkKey = getChunkKey(player.location.x, player.location.z, player.dimension.id);
+    const claimMap = getClaimMap();
+    const owner = claimMap[chunkKey];
+    if (owner !== factionId) {
+        player.sendMessage("§cYou must stand inside your own claimed chunk to manage Area Permissions.");
+        return showClaimMenuUI(player);
+    }
+
+    const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
+    const { x, z } = getChunkCoords(player.location);
+    const syncStatus = perms.syncEnabled ? "§cON (Locked)" : "§aOFF (Custom Active)";
+    const membersCount = (perms.allowedMembers || []).length;
+    const permSummary = `Break:${perms.canBreak ? "§aON" : "§cOFF"}§f Place:${perms.canPlace ? "§aON" : "§cOFF"}§f Redstone:${perms.canUseRedstone ? "§aON" : "§cOFF"}§f Containers:${perms.canOpenContainers ? "§aON" : "§cOFF"}`;
+
+    let body = "§7---------------------------\n";
+    body += `§7Chunk: §f${x}, ${z} §7Dim: §f${player.dimension.id.replace("minecraft:", "")}\n`;
+    body += `§7Sync: ${syncStatus}\n`;
+    body += `§7Members: §f${membersCount}/10\n`;
+    body += `§7Perms: ${permSummary}\n`;
+    body += "§7---------------------------\n";
+    body += "§7Sync OFF = custom rules ACTIVE (allowed members get access per toggles).\n";
+    body += "§7Sync ON = fully locked, per-chunk list ignored.\n";
+    body += "§7---------------------------";
+
+    const form = new ActionFormData()
+        .title("§d§lArea Permissions")
+        .body(body)
+        .button(`§bMembers\n§f[ ${membersCount}/10 ]`, "textures/list.png")
+        .button("§eSettings Permissions\n§f[ Break / Place / Redstone / Containers ]", "textures/settings.png")
+        .button("§cBack", "textures/back.png");
+
+    form.show(player).then(res => {
+        if (res.canceled) { showClaimMenuUI(player); return; }
+        if (res.selection === 0) showAreaPermsMembersUI(player, chunkKey, factionId);
+        else if (res.selection === 1) showAreaPermsSettingsUI(player, chunkKey, factionId);
+        else showClaimMenuUI(player);
+    });
+}
+
+function showAreaPermsMembersUI(player, chunkKey, factionId) {
+    const factions = getAllFactions();
+    const faction = factions[factionId];
+    if (!faction) return showClaimMenuUI(player);
+
+    const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
+    const allowed = perms.allowedMembers || [];
+
+    let body = `§7Chunk: §f${chunkKey}\n§7Allowed: §f${allowed.length}/10\n§7---------------------------\n`;
+    if (allowed.length === 0) body += "§7No members added yet.\n";
+    else body += "§7Members with extra access in this chunk (when Sync OFF).\n";
+    body += "§7---------------------------";
+
+    const form = new ActionFormData()
+        .title("§b§lArea Members")
+        .body(body)
+        .button("§aAdd Member\n§f[ Invite faction member ]", "textures/add.png");
+
+    const onlinePlayers = world.getAllPlayers();
+    const memberButtons = [];
+    for (const pid of allowed) {
+        const mData = faction.members[pid];
+        const onlineP = onlinePlayers.find(p => p.id === pid);
+        const name = onlineP?.name || mData?.name || "Unknown";
+        const role = mData?.role || "member";
+        form.button(`§f${name}\n§7Role: ${role} §f| §cRemove`, "textures/rank_colours/gray.png");
+        memberButtons.push(pid);
+    }
+
+    form.button("§cBack", "textures/back.png");
+
+    form.show(player).then(res => {
+        if (res.canceled) { showAreaPermissionsUI(player); return; }
+        if (res.selection === 0) {
+            showAreaPermsAddMemberUI(player, chunkKey, factionId);
+        } else if (res.selection >= 1 && res.selection < 1 + memberButtons.length) {
+            const targetId = memberButtons[res.selection - 1];
+            showAreaPermsRemoveMemberConfirmUI(player, chunkKey, factionId, targetId);
+        } else {
+            showAreaPermissionsUI(player);
+        }
+    });
+}
+
+function showAreaPermsAddMemberUI(player, chunkKey, factionId) {
+    const factions = getAllFactions();
+    const faction = factions[factionId];
+    if (!faction) return showClaimMenuUI(player);
+
+    const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
+    const allowed = perms.allowedMembers || [];
+
+    if (allowed.length >= 10) {
+        player.sendMessage("§cThis chunk already has max 10 allowed members.");
+        return showAreaPermsMembersUI(player, chunkKey, factionId);
+    }
+
+    const eligible = [];
+    for (const mid in faction.members) {
+        if (!allowed.includes(mid)) {
+            eligible.push({ id: mid, data: faction.members[mid] });
+        }
+    }
+
+    if (eligible.length === 0) {
+        player.sendMessage("§cNo eligible faction members to add (all already allowed or not in faction).");
+        return showAreaPermsMembersUI(player, chunkKey, factionId);
+    }
+
+    const onlinePlayers = world.getAllPlayers();
+    eligible.sort((a, b) => {
+        const nameA = (onlinePlayers.find(p => p.id === a.id)?.name || a.data.name || "").toLowerCase();
+        const nameB = (onlinePlayers.find(p => p.id === b.id)?.name || b.data.name || "").toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+
+    const form = new ActionFormData()
+        .title("§a§lAdd Area Member")
+        .body(`§7Select a faction member to grant extra access in this chunk (when Sync OFF).\n§7Current: §f${allowed.length}/10`);
+
+    for (const e of eligible) {
+        const onlineP = onlinePlayers.find(p => p.id === e.id);
+        const name = onlineP?.name || e.data.name || "Unknown";
+        const role = e.data.role || "member";
+        const status = onlineP ? "§aOnline" : "§cOffline";
+        form.button(`§f${name}\n§7${role} | ${status}`, "textures/tpa2.png");
+    }
+    form.button("§cBack", "textures/back.png");
+
+    form.show(player).then(res => {
+        if (res.canceled) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
+        if (res.selection === eligible.length) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
+        const chosen = eligible[res.selection];
+        if (!chosen) return showAreaPermsAddMemberUI(player, chunkKey, factionId);
+
+        const map = getChunkPermsMap();
+        const current = map[chunkKey] || getDefaultChunkPerm(factionId);
+        current.allowedMembers = current.allowedMembers || [];
+        if (current.allowedMembers.length >= 10) {
+            player.sendMessage("§cMax 10 members reached.");
+            return showAreaPermsMembersUI(player, chunkKey, factionId);
+        }
+        if (!current.allowedMembers.includes(chosen.id)) {
+            current.allowedMembers.push(chosen.id);
+            current.factionId = factionId;
+            map[chunkKey] = current;
+            saveChunkPermsMap(map);
+            const name = world.getAllPlayers().find(p => p.id === chosen.id)?.name || chosen.data.name;
+            player.sendMessage(`§aAdded §f${name} §ato Area Permissions for chunk §e${chunkKey}§a.`);
+            player.playSound("random.orb");
+        }
+        showAreaPermsMembersUI(player, chunkKey, factionId);
+    });
+}
+
+function showAreaPermsRemoveMemberConfirmUI(player, chunkKey, factionId, targetId) {
+    const factions = getAllFactions();
+    const faction = factions[factionId];
+    if (!faction) return showClaimMenuUI(player);
+    const mData = faction.members[targetId];
+    const onlineP = world.getAllPlayers().find(p => p.id === targetId);
+    const name = onlineP?.name || mData?.name || "Unknown";
+
+    const form = new MessageFormData()
+        .title("§c§lRemove Area Member")
+        .body(`§cRemove §f${name}§c from Area Permissions for this chunk?\n\n§7They will remain a faction member, but lose extra chunk access.`)
+        .button1("§cYes, Remove")
+        .button2("§aCancel");
+
+    form.show(player).then(res => {
+        if (res.canceled || res.selection === 1) { showAreaPermsMembersUI(player, chunkKey, factionId); return; }
+        const map = getChunkPermsMap();
+        if (map[chunkKey] && Array.isArray(map[chunkKey].allowedMembers)) {
+            map[chunkKey].allowedMembers = map[chunkKey].allowedMembers.filter(id => id !== targetId);
+            saveChunkPermsMap(map);
+            player.sendMessage(`§eRemoved §f${name} §efrom Area Permissions.`);
+            player.playSound("random.orb");
+        }
+        showAreaPermsMembersUI(player, chunkKey, factionId);
+    });
+}
+
+function showAreaPermsSettingsUI(player, chunkKey, factionId) {
+    const perms = getChunkPermAt(chunkKey) || ensureChunkPerm(chunkKey, factionId);
+
+    const form = new ModalFormData()
+        .title("§e§lArea Settings")
+        .toggle("§6Sync Mode §8(OFF=Custom Active, ON=Fully Locked)", { defaultValue: !!perms.syncEnabled })
+        .divider()
+        .toggle("Allow Break Blocks", { defaultValue: !!perms.canBreak })
+        .toggle("Allow Place Blocks", { defaultValue: !!perms.canPlace })
+        .toggle("Allow Redstone / Doors", { defaultValue: !!perms.canUseRedstone })
+        .toggle("Allow Containers / Chests", { defaultValue: !!perms.canOpenContainers });
+
+    form.show(player).then(res => {
+        if (res.canceled) { showAreaPermissionsUI(player); return; }
+        const vals = res.formValues;
+        const map = getChunkPermsMap();
+        const current = map[chunkKey] || getDefaultChunkPerm(factionId);
+        current.syncEnabled = !!vals[0];
+        // vals[1] is divider
+        current.canBreak = !!vals[2];
+        current.canPlace = !!vals[3];
+        current.canUseRedstone = !!vals[4];
+        current.canOpenContainers = !!vals[5];
+        current.factionId = factionId;
+        current.allowedMembers = current.allowedMembers || [];
+        map[chunkKey] = current;
+        saveChunkPermsMap(map);
+
+        const syncTxt = current.syncEnabled ? "§cON (Locked)" : "§aOFF (Custom Active)";
+        player.sendMessage(`§aArea Permissions updated! Sync: ${syncTxt}`);
+        player.playSound("random.orb");
+        showAreaPermissionsUI(player);
     });
 }
 
@@ -603,20 +970,18 @@ world.afterEvents.entityHurt.subscribe((event) => {
     if (!victimFacId) return;
 
     const attackerFacId = getPlayerFactionId(attacker.id);
-    if (victimFacId === attackerFacId) return; // Ignore teammates
+    if (victimFacId === attackerFacId) return;
 
     if (attackerFacId) {
         const factions = getAllFactions();
         const vFac = factions[victimFacId];
-        if (vFac && (vFac.allies || []).includes(attackerFacId)) return; // Ignore allies
+        if (vFac && (vFac.allies || []).includes(attackerFacId)) return;
     }
 
-    // Check if victim was hit INSIDE their own faction's territory
     const claimMap = getClaimMap();
     const chunkKey = getChunkKey(victim.location.x, victim.location.z, victim.dimension.id);
-    if (claimMap[chunkKey] !== victimFacId) return; // Not in their own land
+    if (claimMap[chunkKey] !== victimFacId) return;
 
-    // Trigger Alarm (Cooldown of 60 seconds per faction so it doesn't spam chat)
     const cdKey = `zyd:alarm_cd_${victimFacId}`;
     const lastAlert = world.getDynamicProperty(cdKey) || 0;
     const now = Date.now();

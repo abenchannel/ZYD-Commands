@@ -40,24 +40,66 @@ const FACTION_ROLES = {
 
 const DEFAULT_PERMISSIONS = {
     admin: {
-        setStatus: true, editDesc: true, manageHome: false, viewMembers: true,
+        setStatus: true, editDesc: true, manageHome: true, canSetHome: true, canClaim: true, viewMembers: true,
         inviteMembers: true, manageRequests: true, editRoles: true, kickMembers: true,
         manageSettings: false, viewDiplomacy: true, manageDiplomacy: true, disband: false,
         canBreak: true, canPlace: true, canOpenContainers: true, canUseDoors: true
     },
     moderator: {
-        setStatus: false, editDesc: false, manageHome: false, viewMembers: true,
+        setStatus: false, editDesc: false, manageHome: false, canSetHome: false, canClaim: false, viewMembers: true,
         inviteMembers: false, manageRequests: false, editRoles: false, kickMembers: false,
         manageSettings: false, viewDiplomacy: true, manageDiplomacy: false, disband: false,
         canBreak: false, canPlace: false, canOpenContainers: false, canUseDoors: true
     },
     member: {
-        setStatus: false, editDesc: false, manageHome: false, viewMembers: true,
+        setStatus: false, editDesc: false, manageHome: false, canSetHome: false, canClaim: false, viewMembers: true,
         inviteMembers: false, manageRequests: false, editRoles: false, kickMembers: false,
         manageSettings: false, viewDiplomacy: true, manageDiplomacy: false, disband: false,
         canBreak: false, canPlace: false, canOpenContainers: false, canUseDoors: true
     }
 };
+
+// Chunk perms storage key (shared with factionsClaims.js)
+const CHUNK_PERMS_KEY = "zyd:chunk_perms";
+
+function _getChunkPermsMapDirect() {
+    try {
+        const raw = world.getDynamicProperty(CHUNK_PERMS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+}
+function _saveChunkPermsMapDirect(map) {
+    try { world.setDynamicProperty(CHUNK_PERMS_KEY, JSON.stringify(map)); } catch (e) { }
+}
+function removePlayerFromAllChunkPerms(factionId, playerId) {
+    try {
+        const map = _getChunkPermsMapDirect();
+        let changed = false;
+        for (const key in map) {
+            const data = map[key];
+            if (!data) continue;
+            if (data.factionId === factionId && Array.isArray(data.allowedMembers)) {
+                const before = data.allowedMembers.length;
+                data.allowedMembers = data.allowedMembers.filter(id => id !== playerId);
+                if (data.allowedMembers.length !== before) changed = true;
+            }
+        }
+        if (changed) _saveChunkPermsMapDirect(map);
+    } catch (e) { }
+}
+function deleteAllChunkPermsForFaction(factionId) {
+    try {
+        const map = _getChunkPermsMapDirect();
+        let changed = false;
+        for (const key in map) {
+            if (map[key] && map[key].factionId === factionId) {
+                delete map[key];
+                changed = true;
+            }
+        }
+        if (changed) _saveChunkPermsMapDirect(map);
+    } catch (e) { }
+}
 
 export function hasFactionPermission(faction, playerId, permKey) {
     const member = faction.members[playerId];
@@ -752,10 +794,12 @@ function showLeaveFactionConfirmUI(player) {
         const currentFaction = factions[getPlayerFactionId(player.id)];
         if (!currentFaction || !currentFaction.members[player.id]) return;
 
+        const leavingFactionId = getPlayerFactionId(player.id);
         savePlayerSavedPower(player.id, currentFaction.members[player.id].power || 0);
         delete currentFaction.members[player.id];
         saveAllFactions(factions);
         setPlayerFaction(player.id, null);
+        try { if (leavingFactionId) removePlayerFromAllChunkPerms(leavingFactionId, player.id); } catch (e) { }
 
         player.sendMessage(`§e§l You left §f${faction.name}§e.`);
         player.playSound("random.orb");
@@ -834,6 +878,7 @@ function showDisbandConfirmUI(player) {
         cleanupFactionRelations(factions, factionId);
         delete factions[factionId];
         saveAllFactions(factions);
+        try { deleteAllChunkPermsForFaction(factionId); } catch (e) { }
 
         // Set cooldown (OP bypasses in create)
         if (!player.hasTag("op")) {
@@ -1012,6 +1057,8 @@ function showRolesConfigEditUI(player, faction, role) {
         .toggle("Set Faction Status", { defaultValue: !!current.setStatus })
         .toggle("Edit Description", { defaultValue: !!current.editDesc })
         .toggle("Manage Faction Home", { defaultValue: !!current.manageHome })
+        .toggle("Can SetHome (/fsethome /fdelhome)", { defaultValue: !!(current.canSetHome ?? current.manageHome) })
+        .toggle("Can Claim (/fclaim /funclaim + Area Permissions)", { defaultValue: !!current.canClaim })
         .toggle("View Member List", { defaultValue: !!current.viewMembers })
         .toggle("Add/Invite Member", { defaultValue: !!current.inviteMembers })
         .toggle("Manage Join & Diplomacy Requests", { defaultValue: !!current.manageRequests })
@@ -1032,10 +1079,11 @@ function showRolesConfigEditUI(player, faction, role) {
         const vals = res.formValues;
         factionPerms[role] = {
             setStatus: vals[0], editDesc: vals[1], manageHome: vals[2],
-            viewMembers: vals[3], inviteMembers: vals[4], manageRequests: vals[5],
-            editRoles: vals[6], kickMembers: vals[7], manageSettings: vals[8],
-            viewDiplomacy: vals[9], manageDiplomacy: vals[10], disband: vals[11],
-            canBreak: vals[12], canPlace: vals[13], canOpenContainers: vals[14], canUseDoors: vals[15]
+            canSetHome: vals[3], canClaim: vals[4],
+            viewMembers: vals[5], inviteMembers: vals[6], manageRequests: vals[7],
+            editRoles: vals[8], kickMembers: vals[9], manageSettings: vals[10],
+            viewDiplomacy: vals[11], manageDiplomacy: vals[12], disband: vals[13],
+            canBreak: vals[14], canPlace: vals[15], canOpenContainers: vals[16], canUseDoors: vals[17]
         };
 
         const factions = getAllFactions();
@@ -1294,10 +1342,12 @@ function showKickConfirmUI(player, targetId, targetName, targetPower) {
         if (!faction) return;
 
         const factions = getAllFactions();
-        savePlayerSavedPower(targetId, factions[faction.id].members[targetId]?.power || 0);
-        delete factions[faction.id].members[targetId];
+        const kFid = faction.id;
+        savePlayerSavedPower(targetId, factions[kFid].members[targetId]?.power || 0);
+        delete factions[kFid].members[targetId];
         saveAllFactions(factions);
         setPlayerFaction(targetId, null);
+        try { removePlayerFromAllChunkPerms(kFid, targetId); } catch (e) { }
 
         player.sendMessage(`§c§l Kicked §f${targetName} §cfrom the faction.`);
         const targetPlayer = world.getAllPlayers().find(p => p.id === targetId);
@@ -4012,6 +4062,7 @@ function showOpKickConfirmUI(player, factionId, targetId, targetName, targetPowe
         delete factions[factionId].members[targetId];
         saveAllFactions(factions);
         setPlayerFaction(targetId, null);
+        try { removePlayerFromAllChunkPerms(factionId, targetId); } catch (e) { }
 
         player.sendMessage(`§c§l Kicked §f${targetName} §cfrom the faction. §7(OP Action)`);
         const targetPlayer = world.getAllPlayers().find(p => p.id === targetId);
@@ -4392,6 +4443,8 @@ function showOpRolesConfigEditUI(player, factionId, role) {
         .toggle("Set Faction Status", { defaultValue: !!current.setStatus })
         .toggle("Edit Description", { defaultValue: !!current.editDesc })
         .toggle("Manage Faction Home", { defaultValue: !!current.manageHome })
+        .toggle("Can SetHome (/fsethome /fdelhome)", { defaultValue: !!(current.canSetHome ?? current.manageHome) })
+        .toggle("Can Claim (/fclaim /funclaim + Area Permissions)", { defaultValue: !!current.canClaim })
         .toggle("View Member List", { defaultValue: !!current.viewMembers })
         .toggle("Add/Invite Member", { defaultValue: !!current.inviteMembers })
         .toggle("Manage Join & Diplomacy Requests", { defaultValue: !!current.manageRequests })
@@ -4417,19 +4470,21 @@ function showOpRolesConfigEditUI(player, factionId, role) {
             setStatus: vals[0],
             editDesc: vals[1],
             manageHome: vals[2],
-            viewMembers: vals[3],
-            inviteMembers: vals[4],
-            manageRequests: vals[5],
-            editRoles: vals[6],
-            kickMembers: vals[7],
-            manageSettings: vals[8],
-            viewDiplomacy: vals[9],
-            manageDiplomacy: vals[10],
-            disband: vals[11],
-            canBreak: vals[12],
-            canPlace: vals[13],
-            canOpenContainers: vals[14],
-            canUseDoors: vals[15]
+            canSetHome: vals[3],
+            canClaim: vals[4],
+            viewMembers: vals[5],
+            inviteMembers: vals[6],
+            manageRequests: vals[7],
+            editRoles: vals[8],
+            kickMembers: vals[9],
+            manageSettings: vals[10],
+            viewDiplomacy: vals[11],
+            manageDiplomacy: vals[12],
+            disband: vals[13],
+            canBreak: vals[14],
+            canPlace: vals[15],
+            canOpenContainers: vals[16],
+            canUseDoors: vals[17]
         };
 
         factions[factionId].permissions = factionPerms;
@@ -4472,6 +4527,7 @@ function showOpDisbandConfirmUI(player, factionId) {
         cleanupFactionRelations(factions, factionId);
         delete factions[factionId];
         saveAllFactions(factions);
+        try { deleteAllChunkPermsForFaction(factionId); } catch (e) { }
 
         player.sendMessage(`§c§l Faction §f${factionName} §chas been disbanded. §7(OP Action)`);
         player.playSound("random.orb");
@@ -4550,7 +4606,7 @@ export function showSetFactionHome(player) {
     const faction = factions[factionId];
     if (!faction) return;
 
-    if (!hasFactionPermission(faction, player.id, "manageHome")) {
+    if (!hasFactionPermission(faction, player.id, "canSetHome") && !hasFactionPermission(faction, player.id, "manageHome")) {
         player.playSound("note.bass");
         return player.sendMessage("§cYou do not have permission to manage the Faction Home!");
     }
@@ -4676,7 +4732,7 @@ export function showDeleteFactionHome(player) {
     const faction = factions[factionId];
     if (!faction) return;
 
-    if (!hasFactionPermission(faction, player.id, "manageHome")) {
+    if (!hasFactionPermission(faction, player.id, "canSetHome") && !hasFactionPermission(faction, player.id, "manageHome")) {
         player.playSound("note.bass");
         return player.sendMessage("§cYou do not have permission to manage the Faction Home!");
     }
